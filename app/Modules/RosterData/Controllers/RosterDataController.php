@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Roostar\Modules\RosterData\Controllers;
 
+use Roostar\Core\Access\PermissionGrantRepository;
 use Roostar\Core\Access\PermissionRegistry;
+use Roostar\Core\Access\RoleDefaults;
 use Roostar\Core\Audit\AuditLogger;
 use Roostar\Core\Database\Connection;
 use Roostar\Core\Http\Request;
@@ -16,6 +18,7 @@ use Roostar\Core\View\AppView;
 use Roostar\Modules\Auth\Services\AuthSession;
 use Roostar\Modules\RosterData\Repositories\RosterDataRepository;
 use Roostar\Modules\Schools\Repositories\SchoolRepository;
+use Roostar\Modules\Users\UserCreator;
 
 final class RosterDataController
 {
@@ -101,6 +104,64 @@ final class RosterDataController
         }, 'roster_data.school_year_updated');
     }
 
+    public function storePeriod(Request $request): Response
+    {
+        return $this->store($request, '/stamdata?tab=schooljaren', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+            $schoolYearId = $request->string('schooljaar_id');
+            $name = $request->string('naam');
+            $weekFrom = $request->string('week_van') !== '' ? (int) $request->string('week_van') : 0;
+            $weekTo = $request->string('week_tot') !== '' ? (int) $request->string('week_tot') : 0;
+
+            if ($schoolYearId === '') {
+                throw new \InvalidArgumentException('Kies eerst een schooljaar.');
+            }
+
+            if ($name === '') {
+                throw new \InvalidArgumentException('Vul een periodenaam in.');
+            }
+
+            $repository->createPeriod($schoolYearId, $schoolId, $name, $weekFrom, $weekTo);
+            NotificationBag::success('Periode is toegevoegd.');
+        }, 'roster_data.period_created');
+    }
+
+    public function updatePeriod(Request $request): Response
+    {
+        return $this->store($request, '/stamdata?tab=schooljaren', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+            $periodId = $request->string('periode_id');
+            $schoolYearId = $request->string('schooljaar_id');
+            $name = $request->string('naam');
+            $weekFrom = $request->string('week_van') !== '' ? (int) $request->string('week_van') : 0;
+            $weekTo = $request->string('week_tot') !== '' ? (int) $request->string('week_tot') : 0;
+
+            if ($periodId === '' || $schoolYearId === '') {
+                throw new \InvalidArgumentException('Kies eerst een periode.');
+            }
+
+            if ($name === '') {
+                throw new \InvalidArgumentException('Vul een periodenaam in.');
+            }
+
+            $repository->updatePeriod($periodId, $schoolYearId, $schoolId, $name, $weekFrom, $weekTo, $request->string('active') === '1');
+            NotificationBag::success('Periode is bijgewerkt.');
+        }, 'roster_data.period_updated');
+    }
+
+    public function deletePeriod(Request $request): Response
+    {
+        return $this->store($request, '/stamdata?tab=schooljaren', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+            $periodId = $request->string('periode_id');
+            $schoolYearId = $request->string('schooljaar_id');
+
+            if ($periodId === '' || $schoolYearId === '') {
+                throw new \InvalidArgumentException('Kies eerst een periode.');
+            }
+
+            $repository->deletePeriod($periodId, $schoolYearId, $schoolId);
+            NotificationBag::success('Periode is verwijderd.');
+        }, 'roster_data.period_deleted');
+    }
+
     public function storeClass(Request $request): Response
     {
         return $this->store($request, '/stamdata?tab=klassen', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
@@ -158,12 +219,16 @@ final class RosterDataController
             }
 
             $subjectIds = $request->input('subject_ids', []);
+            $subjectHours = $request->input('subject_hours', []);
+            $electiveSubjectIds = $request->input('elective_subject_ids', []);
             $repository->createProgram(
                 $schoolId,
                 $name,
                 $request->string('code'),
                 $request->string('niveau'),
                 is_array($subjectIds) ? $subjectIds : [],
+                is_array($electiveSubjectIds) ? $electiveSubjectIds : [],
+                is_array($subjectHours) ? $subjectHours : [],
             );
             NotificationBag::success('Opleiding is aangemaakt.');
         }, 'roster_data.program_created');
@@ -184,6 +249,8 @@ final class RosterDataController
             }
 
             $subjectIds = $request->input('subject_ids', []);
+            $subjectHours = $request->input('subject_hours', []);
+            $electiveSubjectIds = $request->input('elective_subject_ids', []);
             $repository->updateProgram(
                 $programId,
                 $schoolId,
@@ -191,6 +258,8 @@ final class RosterDataController
                 $request->string('code'),
                 $request->string('niveau'),
                 is_array($subjectIds) ? $subjectIds : [],
+                is_array($electiveSubjectIds) ? $electiveSubjectIds : [],
+                is_array($subjectHours) ? $subjectHours : [],
                 $request->string('active') === '1',
             );
             NotificationBag::success('Opleiding is bijgewerkt.');
@@ -234,17 +303,30 @@ final class RosterDataController
     {
         return $this->store($request, '/stamdata?tab=lokalen', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
             $name = $request->string('naam');
+            $locationId = $request->string('locatie_id');
             $capacity = $request->string('capaciteit') !== '' ? (int) $request->string('capaciteit') : null;
 
             if ($name === '') {
                 throw new \InvalidArgumentException('Vul een lokaalnaam in.');
             }
 
+            if ($locationId === '') {
+                throw new \InvalidArgumentException('Kies een locatie.');
+            }
+
             if ($capacity !== null && $capacity < 1) {
                 throw new \InvalidArgumentException('Capaciteit moet minimaal 1 zijn.');
             }
 
-            $repository->createRoom($schoolId, $name, $capacity);
+            $subjectIds = $request->input('subject_ids', []);
+            $repository->createRoom(
+                $schoolId,
+                $locationId,
+                $name,
+                $capacity,
+                $this->arrayInput($request, 'available_slots'),
+                is_array($subjectIds) ? $subjectIds : [],
+            );
             NotificationBag::success('Lokaal is aangemaakt.');
         }, 'roster_data.room_created');
     }
@@ -254,6 +336,7 @@ final class RosterDataController
         return $this->store($request, '/stamdata?tab=lokalen', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
             $roomId = $request->string('lokaal_id');
             $name = $request->string('naam');
+            $locationId = $request->string('locatie_id');
             $capacity = $request->string('capaciteit') !== '' ? (int) $request->string('capaciteit') : null;
 
             if ($roomId === '') {
@@ -264,13 +347,133 @@ final class RosterDataController
                 throw new \InvalidArgumentException('Vul een lokaalnaam in.');
             }
 
+            if ($locationId === '') {
+                throw new \InvalidArgumentException('Kies een locatie.');
+            }
+
             if ($capacity !== null && $capacity < 1) {
                 throw new \InvalidArgumentException('Capaciteit moet minimaal 1 zijn.');
             }
 
-            $repository->updateRoom($roomId, $schoolId, $name, $capacity, $request->string('active') === '1');
+            $subjectIds = $request->input('subject_ids', []);
+            $repository->updateRoom(
+                $roomId,
+                $schoolId,
+                $locationId,
+                $name,
+                $capacity,
+                $this->arrayInput($request, 'available_slots'),
+                is_array($subjectIds) ? $subjectIds : [],
+                $request->string('active') === '1',
+            );
             NotificationBag::success('Lokaal is bijgewerkt.');
         }, 'roster_data.room_updated');
+    }
+
+    public function storeLocation(Request $request): Response
+    {
+        return $this->store($request, '/stamdata?tab=lokalen', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+            $name = $request->string('naam');
+
+            if ($name === '') {
+                throw new \InvalidArgumentException('Vul een locatienaam in.');
+            }
+
+            $repository->createLocation($schoolId, $name, $request->string('extern') === '1');
+            NotificationBag::success('Locatie is aangemaakt.');
+        }, 'roster_data.location_created');
+    }
+
+    public function storeTeacher(Request $request): Response
+    {
+        return $this->store($request, '/stamdata?tab=leraren', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+            $name = $request->string('name');
+            $email = mb_strtolower($request->string('email'));
+            $password = (string) $request->input('password', '');
+
+            if ($name === '' || $email === '' || $password === '') {
+                throw new \InvalidArgumentException('Vul naam, e-mail en wachtwoord in.');
+            }
+
+            if (strlen($password) < 8) {
+                throw new \InvalidArgumentException('Het wachtwoord moet minimaal 8 tekens zijn.');
+            }
+
+            $db = Connection::get();
+            $creator = new UserCreator($db, new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
+
+            if ($creator->emailExists($email)) {
+                throw new \InvalidArgumentException('Er bestaat al een gebruiker met dit e-mailadres.');
+            }
+
+            $teacherId = $creator->create([
+                'name' => $name,
+                'email' => $email,
+                'password' => $password,
+                'role' => 'leraar',
+                'school_id' => $schoolId,
+                'scholengroep_id' => null,
+            ]);
+
+            $grants = new PermissionGrantRepository($db);
+            foreach (RoleDefaults::basePermissions('leraar') as $permission) {
+                $grants->grant($teacherId, $permission, 'school', $schoolId);
+            }
+
+            $availableSlots = $this->arrayInput($request, 'available_slots');
+            $repository->syncTeacherProfile(
+                $teacherId,
+                $schoolId,
+                $this->hoursPerWeekFromSlots($availableSlots),
+                $this->hoursPerDayFromSlots($availableSlots),
+                $availableSlots,
+                $this->arrayInput($request, 'subject_ids'),
+            );
+            NotificationBag::success('Leraar is aangemaakt.');
+        }, 'roster_data.teacher_created');
+    }
+
+    public function updateTeacher(Request $request): Response
+    {
+        return $this->store($request, '/stamdata?tab=leraren', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+            $teacherId = $request->string('teacher_id');
+            $name = $request->string('name');
+            $email = mb_strtolower($request->string('email'));
+
+            if ($teacherId === '') {
+                throw new \InvalidArgumentException('Kies eerst een leraar.');
+            }
+
+            if ($name === '' || $email === '') {
+                throw new \InvalidArgumentException('Vul naam en e-mail in.');
+            }
+
+            $availableSlots = $this->arrayInput($request, 'available_slots');
+            $repository->updateTeacher($teacherId, $schoolId, $name, $email, $request->string('active') === '1');
+            $repository->syncTeacherProfile(
+                $teacherId,
+                $schoolId,
+                $this->hoursPerWeekFromSlots($availableSlots),
+                $this->hoursPerDayFromSlots($availableSlots),
+                $availableSlots,
+                $this->arrayInput($request, 'subject_ids'),
+            );
+            NotificationBag::success('Leraar is bijgewerkt.');
+        }, 'roster_data.teacher_updated');
+    }
+
+    public function deleteTeacher(Request $request): Response
+    {
+        return $this->store($request, '/stamdata?tab=leraren', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+            $teacherId = $request->string('teacher_id');
+
+            if ($teacherId === '') {
+                throw new \InvalidArgumentException('Kies eerst een leraar.');
+            }
+
+            $repository->deactivateTeacher($teacherId, $schoolId);
+            NotificationBag::success('Leraar is verwijderd uit actieve roosters.');
+        }, 'roster_data.teacher_deleted');
     }
 
     private function renderMasterData(string $tab): Response
@@ -298,9 +501,11 @@ final class RosterDataController
             'csrfToken' => Csrf::token(),
             'schools' => $schools,
             'schoolYears' => $repository->schoolYearsFor($user),
+            'periods' => $repository->periodsFor($user),
             'programs' => $repository->programsFor($user),
             'classes' => $repository->classesFor($user),
             'subjects' => $repository->subjectsFor($user),
+            'locations' => $repository->locationsFor($user),
             'rooms' => $repository->roomsFor($user),
             'teachers' => $repository->teachersFor($user),
         ]));
@@ -343,6 +548,46 @@ final class RosterDataController
         }
 
         return Response::redirect($redirectPath);
+    }
+
+    private function arrayInput(Request $request, string $key): array
+    {
+        $value = $request->input($key, []);
+
+        return is_array($value) ? $value : [];
+    }
+
+    private function hoursPerWeekFromSlots(array $availableSlots): int
+    {
+        return max(1, min(45, count($this->validAvailabilitySlots($availableSlots))));
+    }
+
+    private function hoursPerDayFromSlots(array $availableSlots): int
+    {
+        $counts = ['ma' => 0, 'di' => 0, 'wo' => 0, 'do' => 0, 'vr' => 0];
+        foreach ($this->validAvailabilitySlots($availableSlots) as $slot) {
+            [$day] = explode('-', $slot, 2);
+            if (array_key_exists($day, $counts)) {
+                $counts[$day]++;
+            }
+        }
+
+        return max(1, min(9, max($counts)));
+    }
+
+    private function validAvailabilitySlots(array $availableSlots): array
+    {
+        $allowed = [];
+        foreach (['ma', 'di', 'wo', 'do', 'vr'] as $day) {
+            for ($period = 1; $period <= 9; $period++) {
+                $allowed[] = $day . '-' . $period;
+            }
+        }
+
+        return array_values(array_intersect(
+            $allowed,
+            array_values(array_unique(array_filter($availableSlots, static fn (mixed $slot): bool => is_string($slot) && $slot !== ''))),
+        ));
     }
 
     private function forbidden(): Response

@@ -11,7 +11,7 @@ use Roostar\Core\Support\Str;
 
 final class RosterDataRepository
 {
-    private const ENCRYPTED_TABLES = ['klassen', 'vakken', 'lokalen', 'opleidingen'];
+    private const ENCRYPTED_TABLES = ['klassen', 'vakken', 'lokalen', 'opleidingen', 'locaties'];
 
     public function __construct(
         private readonly PDO $db,
@@ -28,6 +28,29 @@ final class RosterDataRepository
             INNER JOIN scholen s ON s.id = sj.school_id
             WHERE {$scopeSql}
             ORDER BY sj.startdatum DESC, sj.naam
+        ");
+        $stmt->execute($params);
+
+        return array_map(fn (array $row): array => [
+            ...$row,
+            'school_naam' => $this->decrypt((string) $row['school_naam_encrypted']),
+        ], $stmt->fetchAll());
+    }
+
+    public function periodsFor(UserContext $user): array
+    {
+        [$scopeSql, $params] = $this->schoolScopeSql($user, 's');
+        $stmt = $this->db->prepare("
+            SELECT
+                sp.*,
+                sj.naam AS schooljaar_naam,
+                sj.school_id,
+                s.naam_encrypted AS school_naam_encrypted
+            FROM schooljaar_periodes sp
+            INNER JOIN schooljaren sj ON sj.id = sp.schooljaar_id
+            INNER JOIN scholen s ON s.id = sj.school_id
+            WHERE {$scopeSql}
+            ORDER BY sj.startdatum DESC, sp.week_van, sp.naam
         ");
         $stmt->execute($params);
 
@@ -78,33 +101,176 @@ final class RosterDataRepository
         ", "ORDER BY v.code IS NULL, v.code, v.created_at DESC");
     }
 
+    public function locationsFor(UserContext $user): array
+    {
+        $locations = $this->encryptedRowsFor($user, 'locaties', 'loc', "
+            SELECT loc.*, s.naam_encrypted AS school_naam_encrypted
+            FROM locaties loc
+            INNER JOIN scholen s ON s.id = loc.school_id
+        ", "ORDER BY loc.active DESC, loc.extern, loc.created_at DESC");
+
+        return array_map(static function (array $location): array {
+            $availability = $location['beschikbaarheid_json'] !== null
+                ? json_decode((string) $location['beschikbaarheid_json'], true)
+                : null;
+            $location['available_slots'] = is_array($availability) ? array_values(array_filter($availability, 'is_string')) : null;
+
+            return $location;
+        }, $locations);
+    }
+
     public function roomsFor(UserContext $user): array
     {
-        return $this->encryptedRowsFor($user, 'lokalen', 'l', "
-            SELECT l.*, s.naam_encrypted AS school_naam_encrypted
+        $rooms = $this->encryptedRowsFor($user, 'lokalen', 'l', "
+            SELECT
+                l.*,
+                s.naam_encrypted AS school_naam_encrypted,
+                loc.naam_encrypted AS locatie_naam_encrypted,
+                loc.extern AS locatie_extern
             FROM lokalen l
             INNER JOIN scholen s ON s.id = l.school_id
+            LEFT JOIN locaties loc ON loc.id = l.locatie_id
         ", "ORDER BY l.created_at DESC");
+
+        $subjectsByRoom = $this->subjectsByRoom(array_column($rooms, 'id'));
+
+        return array_map(function (array $room) use ($subjectsByRoom): array {
+            $room['subjects'] = $subjectsByRoom[(string) $room['id']] ?? [];
+            $room['locatie_naam'] = !empty($room['locatie_naam_encrypted'])
+                ? $this->decrypt((string) $room['locatie_naam_encrypted'])
+                : $room['school_naam'];
+            $room['locatie_extern'] = (int) ($room['locatie_extern'] ?? 0) === 1;
+            $availability = $room['beschikbaarheid_json'] !== null
+                ? json_decode((string) $room['beschikbaarheid_json'], true)
+                : null;
+            $room['available_slots'] = is_array($availability) ? array_values(array_filter($availability, 'is_string')) : null;
+            return $room;
+        }, $rooms);
     }
 
     public function teachersFor(UserContext $user): array
     {
         [$scopeSql, $params] = $this->schoolScopeSql($user, 's');
         $stmt = $this->db->prepare("
-            SELECT u.id, u.email, u.naam_encrypted, u.active, s.naam_encrypted AS school_naam_encrypted
+            SELECT
+                u.id,
+                u.email,
+                u.naam_encrypted,
+                u.active,
+                u.school_id,
+                lp.max_uren_per_week,
+                lp.max_uren_per_dag,
+                lp.beschikbaarheid_json,
+                s.naam_encrypted AS school_naam_encrypted
             FROM users u
             INNER JOIN scholen s ON s.id = u.school_id
+            LEFT JOIN leraar_profielen lp ON lp.user_id = u.id
             WHERE {$scopeSql}
               AND u.role = 'leraar'
             ORDER BY u.active DESC, u.email
         ");
         $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+        $subjectsByTeacher = $this->subjectsByTeacher(array_column($rows, 'id'));
 
-        return array_map(fn (array $row): array => [
-            ...$row,
-            'naam' => $this->decrypt((string) $row['naam_encrypted']),
-            'school_naam' => $this->decrypt((string) $row['school_naam_encrypted']),
-        ], $stmt->fetchAll());
+        return array_map(function (array $row) use ($subjectsByTeacher): array {
+            $availability = $row['beschikbaarheid_json'] !== null
+                ? json_decode((string) $row['beschikbaarheid_json'], true)
+                : null;
+
+            return [
+                ...$row,
+                'naam' => $this->decrypt((string) $row['naam_encrypted']),
+                'school_naam' => $this->decrypt((string) $row['school_naam_encrypted']),
+                'max_uren_per_week' => (int) ($row['max_uren_per_week'] ?? 24),
+                'max_uren_per_dag' => (int) ($row['max_uren_per_dag'] ?? 6),
+                'available_slots' => is_array($availability) ? array_values(array_filter($availability, 'is_string')) : null,
+                'subjects' => $subjectsByTeacher[(string) $row['id']] ?? [],
+            ];
+        }, $rows);
+    }
+
+    public function syncTeacherProfile(string $teacherId, string $schoolId, int $maxHoursPerWeek, int $maxHoursPerDay, array $availableSlots, array $subjectIds): void
+    {
+        if (!$this->teacherBelongsToSchool($teacherId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een leraar van dezelfde school.');
+        }
+
+        $maxHoursPerWeek = max(1, min(45, $maxHoursPerWeek));
+        $maxHoursPerDay = max(1, min(9, $maxHoursPerDay));
+        $availableSlots = $this->normalizeAvailabilitySlots($availableSlots);
+
+        $stmt = $this->db->prepare("
+            INSERT INTO leraar_profielen (user_id, max_uren_per_week, max_uren_per_dag, beschikbaarheid_json, created_at, updated_at)
+            VALUES (:user_id, :max_uren_per_week, :max_uren_per_dag, :beschikbaarheid_json, NOW(), NOW())
+            ON DUPLICATE KEY UPDATE
+                max_uren_per_week = VALUES(max_uren_per_week),
+                max_uren_per_dag = VALUES(max_uren_per_dag),
+                beschikbaarheid_json = VALUES(beschikbaarheid_json),
+                updated_at = NOW()
+        ");
+        $stmt->execute([
+            'user_id' => $teacherId,
+            'max_uren_per_week' => $maxHoursPerWeek,
+            'max_uren_per_dag' => $maxHoursPerDay,
+            'beschikbaarheid_json' => json_encode($availableSlots, JSON_THROW_ON_ERROR),
+        ]);
+
+        $stmt = $this->db->prepare("DELETE FROM leraar_vakken WHERE user_id = :user_id");
+        $stmt->execute(['user_id' => $teacherId]);
+        $this->syncTeacherSubjects($teacherId, $schoolId, $subjectIds);
+    }
+
+    public function updateTeacher(string $teacherId, string $schoolId, string $name, string $email, bool $active): void
+    {
+        if (!$this->teacherBelongsToSchool($teacherId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een leraar van dezelfde school.');
+        }
+
+        $email = mb_strtolower(trim($email));
+        if ($this->emailBelongsToAnotherUser($email, $teacherId)) {
+            throw new \InvalidArgumentException('Er bestaat al een gebruiker met dit e-mailadres.');
+        }
+
+        $stmt = $this->db->prepare("
+            UPDATE users
+            SET email = :email,
+                naam_encrypted = :naam_encrypted,
+                naam_search_hash = :naam_search_hash,
+                active = :active,
+                updated_at = NOW()
+            WHERE id = :id
+              AND school_id = :school_id
+              AND role = 'leraar'
+        ");
+        $stmt->execute([
+            'id' => $teacherId,
+            'school_id' => $schoolId,
+            'email' => $email,
+            'naam_encrypted' => $this->encryptor->encrypt($name),
+            'naam_search_hash' => Str::searchHash($name),
+            'active' => $active ? 1 : 0,
+        ]);
+    }
+
+    public function deactivateTeacher(string $teacherId, string $schoolId): void
+    {
+        if (!$this->teacherBelongsToSchool($teacherId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een leraar van dezelfde school.');
+        }
+
+        $stmt = $this->db->prepare("
+            UPDATE users
+            SET active = 0,
+                updated_at = NOW()
+            WHERE id = :id
+              AND school_id = :school_id
+              AND role = 'leraar'
+        ");
+        $stmt->execute([
+            'id' => $teacherId,
+            'school_id' => $schoolId,
+        ]);
     }
 
     public function createSchoolYear(string $schoolId, string $name, string $startDate, string $endDate): void
@@ -145,6 +311,72 @@ final class RosterDataRepository
             'startdatum' => $startDate,
             'einddatum' => $endDate,
             'active' => $active ? 1 : 0,
+        ]);
+    }
+
+    public function createPeriod(string $schoolYearId, string $schoolId, string $name, int $weekFrom, int $weekTo): void
+    {
+        if (!$this->schoolYearBelongsToSchool($schoolYearId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een schooljaar van dezelfde school.');
+        }
+
+        $this->assertValidPeriodWeeks($weekFrom, $weekTo);
+
+        $stmt = $this->db->prepare("
+            INSERT INTO schooljaar_periodes (id, schooljaar_id, naam, week_van, week_tot, active, created_at, updated_at)
+            VALUES (:id, :schooljaar_id, :naam, :week_van, :week_tot, 1, NOW(), NOW())
+        ");
+        $stmt->execute([
+            'id' => Str::uuid(),
+            'schooljaar_id' => $schoolYearId,
+            'naam' => $name,
+            'week_van' => $weekFrom,
+            'week_tot' => $weekTo,
+        ]);
+    }
+
+    public function updatePeriod(string $periodId, string $schoolYearId, string $schoolId, string $name, int $weekFrom, int $weekTo, bool $active): void
+    {
+        if (!$this->periodBelongsToSchoolYear($periodId, $schoolYearId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een periode van hetzelfde schooljaar.');
+        }
+
+        $this->assertValidPeriodWeeks($weekFrom, $weekTo);
+
+        $stmt = $this->db->prepare("
+            UPDATE schooljaar_periodes
+            SET naam = :naam,
+                week_van = :week_van,
+                week_tot = :week_tot,
+                active = :active,
+                updated_at = NOW()
+            WHERE id = :id
+              AND schooljaar_id = :schooljaar_id
+        ");
+        $stmt->execute([
+            'id' => $periodId,
+            'schooljaar_id' => $schoolYearId,
+            'naam' => $name,
+            'week_van' => $weekFrom,
+            'week_tot' => $weekTo,
+            'active' => $active ? 1 : 0,
+        ]);
+    }
+
+    public function deletePeriod(string $periodId, string $schoolYearId, string $schoolId): void
+    {
+        if (!$this->periodBelongsToSchoolYear($periodId, $schoolYearId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een periode van hetzelfde schooljaar.');
+        }
+
+        $stmt = $this->db->prepare("
+            DELETE FROM schooljaar_periodes
+            WHERE id = :id
+              AND schooljaar_id = :schooljaar_id
+        ");
+        $stmt->execute([
+            'id' => $periodId,
+            'schooljaar_id' => $schoolYearId,
         ]);
     }
 
@@ -207,6 +439,26 @@ final class RosterDataRepository
         return (bool) $stmt->fetchColumn();
     }
 
+    public function periodBelongsToSchoolYear(string $periodId, string $schoolYearId, string $schoolId): bool
+    {
+        $stmt = $this->db->prepare("
+            SELECT 1
+            FROM schooljaar_periodes sp
+            INNER JOIN schooljaren sj ON sj.id = sp.schooljaar_id
+            WHERE sp.id = :id
+              AND sp.schooljaar_id = :schooljaar_id
+              AND sj.school_id = :school_id
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'id' => $periodId,
+            'schooljaar_id' => $schoolYearId,
+            'school_id' => $schoolId,
+        ]);
+
+        return (bool) $stmt->fetchColumn();
+    }
+
     public function createSubject(string $schoolId, string $name, string $code): void
     {
         $this->createEncrypted('vakken', [
@@ -229,7 +481,7 @@ final class RosterDataRepository
         ]);
     }
 
-    public function createProgram(string $schoolId, string $name, string $code, string $level, array $subjectIds): void
+    public function createProgram(string $schoolId, string $name, string $code, string $level, array $subjectIds, array $electiveSubjectIds = [], array $subjectHours = []): void
     {
         $programId = $this->createEncrypted('opleidingen', [
             'school_id' => $schoolId,
@@ -238,10 +490,10 @@ final class RosterDataRepository
             'niveau' => $level !== '' ? $level : null,
         ]);
 
-        $this->syncProgramSubjects($programId, $schoolId, $subjectIds);
+        $this->syncProgramSubjects($programId, $schoolId, $subjectIds, $electiveSubjectIds, $subjectHours);
     }
 
-    public function updateProgram(string $programId, string $schoolId, string $name, string $code, string $level, array $subjectIds, bool $active): void
+    public function updateProgram(string $programId, string $schoolId, string $name, string $code, string $level, array $subjectIds, array $electiveSubjectIds, array $subjectHours, bool $active): void
     {
         if (!$this->programBelongsToSchool($programId, $schoolId)) {
             throw new \InvalidArgumentException('Kies een opleiding van dezelfde school.');
@@ -270,29 +522,60 @@ final class RosterDataRepository
 
         $stmt = $this->db->prepare("DELETE FROM opleiding_vakken WHERE opleiding_id = :opleiding_id");
         $stmt->execute(['opleiding_id' => $programId]);
-        $this->syncProgramSubjects($programId, $schoolId, $subjectIds);
+        $stmt = $this->db->prepare("DELETE FROM opleiding_vak_periode_uren WHERE opleiding_id = :opleiding_id");
+        $stmt->execute(['opleiding_id' => $programId]);
+        $this->syncProgramSubjects($programId, $schoolId, $subjectIds, $electiveSubjectIds, $subjectHours);
     }
 
-    public function createRoom(string $schoolId, string $name, ?int $capacity): void
+    public function createLocation(string $schoolId, string $name, bool $external): void
     {
-        $this->createEncrypted('lokalen', [
+        $this->createEncrypted('locaties', [
             'school_id' => $schoolId,
             'naam' => $name,
-            'capaciteit' => $capacity,
+            'extern' => $external ? 1 : 0,
         ]);
     }
 
-    public function updateRoom(string $roomId, string $schoolId, string $name, ?int $capacity, bool $active): void
+    public function createRoom(string $schoolId, string $locationId, string $name, ?int $capacity, array $availableSlots, array $subjectIds): void
+    {
+        if (!$this->locationBelongsToSchool($locationId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een locatie van dezelfde school.');
+        }
+
+        $locationIsExternal = $this->locationIsExternal($locationId, $schoolId);
+        $roomId = $this->createEncrypted('lokalen', [
+            'school_id' => $schoolId,
+            'locatie_id' => $locationId,
+            'naam' => $name,
+            'capaciteit' => $capacity,
+            'beschikbaarheid_json' => $locationIsExternal ? json_encode($this->normalizeAvailabilitySlots($availableSlots), JSON_THROW_ON_ERROR) : null,
+        ]);
+
+        $this->syncRoomSubjects($roomId, $schoolId, $subjectIds);
+    }
+
+    public function updateRoom(string $roomId, string $schoolId, string $locationId, string $name, ?int $capacity, array $availableSlots, array $subjectIds, bool $active): void
     {
         if (!$this->encryptedRowBelongsToSchool('lokalen', $roomId, $schoolId)) {
             throw new \InvalidArgumentException('Kies een lokaal van dezelfde school.');
         }
 
+        if (!$this->locationBelongsToSchool($locationId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een locatie van dezelfde school.');
+        }
+
+        $locationIsExternal = $this->locationIsExternal($locationId, $schoolId);
         $this->updateEncrypted('lokalen', $roomId, $schoolId, [
+            'locatie_id' => $locationId,
             'naam' => $name,
             'capaciteit' => $capacity,
+            'beschikbaarheid_json' => $locationIsExternal ? json_encode($this->normalizeAvailabilitySlots($availableSlots), JSON_THROW_ON_ERROR) : null,
             'active' => $active ? 1 : 0,
         ]);
+
+        $stmt = $this->db->prepare("DELETE FROM lokaal_vakken WHERE lokaal_id = :lokaal_id");
+        $stmt->execute(['lokaal_id' => $roomId]);
+        $this->syncRoomSubjects($roomId, $schoolId, $subjectIds);
     }
 
     private function encryptedRowsFor(UserContext $user, string $table, string $alias, string $select, string $order): array
@@ -371,7 +654,59 @@ final class RosterDataRepository
         $stmt->execute($values);
     }
 
-    private function syncProgramSubjects(string $programId, string $schoolId, array $subjectIds): void
+    private function syncProgramSubjects(string $programId, string $schoolId, array $subjectIds, array $electiveSubjectIds = [], array $subjectHours = []): void
+    {
+        $subjectIds = array_values(array_unique(array_filter($subjectIds, static fn (mixed $id): bool => is_string($id) && $id !== '')));
+        $electiveSubjectIds = array_values(array_unique(array_filter($electiveSubjectIds, static fn (mixed $id): bool => is_string($id) && $id !== '')));
+
+        if ($subjectIds === []) {
+            return;
+        }
+
+        $validSubjectIds = $this->subjectIdsForSchool($schoolId, $subjectIds);
+        $electiveSubjectIds = array_values(array_intersect($validSubjectIds, $electiveSubjectIds));
+        $stmt = $this->db->prepare("
+            INSERT IGNORE INTO opleiding_vakken (opleiding_id, vak_id, uren_per_week, keuzevak, created_at)
+            VALUES (:opleiding_id, :vak_id, :uren_per_week, :keuzevak, NOW())
+        ");
+
+        foreach ($validSubjectIds as $subjectId) {
+            $hoursByPeriod = $this->normalHoursForSubject($subjectHours[$subjectId] ?? []);
+            $stmt->execute([
+                'opleiding_id' => $programId,
+                'vak_id' => $subjectId,
+                'uren_per_week' => $this->defaultHoursForSubject($hoursByPeriod),
+                'keuzevak' => in_array($subjectId, $electiveSubjectIds, true) ? 1 : 0,
+            ]);
+        }
+
+        $periodIds = $this->periodIdsForSchool($schoolId, $this->periodIdsFromHours($subjectHours));
+        if ($periodIds === []) {
+            return;
+        }
+
+        $periodHoursStmt = $this->db->prepare("
+            INSERT INTO opleiding_vak_periode_uren (opleiding_id, vak_id, periode_id, uren_per_week, created_at, updated_at)
+            VALUES (:opleiding_id, :vak_id, :periode_id, :uren_per_week, NOW(), NOW())
+            ON DUPLICATE KEY UPDATE
+                uren_per_week = VALUES(uren_per_week),
+                updated_at = NOW()
+        ");
+
+        foreach ($validSubjectIds as $subjectId) {
+            $hoursByPeriod = $this->normalHoursForSubject($subjectHours[$subjectId] ?? []);
+            foreach ($periodIds as $periodId) {
+                $periodHoursStmt->execute([
+                    'opleiding_id' => $programId,
+                    'vak_id' => $subjectId,
+                    'periode_id' => $periodId,
+                    'uren_per_week' => $hoursByPeriod[$periodId] ?? 0,
+                ]);
+            }
+        }
+    }
+
+    private function syncRoomSubjects(string $roomId, string $schoolId, array $subjectIds): void
     {
         $subjectIds = array_values(array_unique(array_filter($subjectIds, static fn (mixed $id): bool => is_string($id) && $id !== '')));
 
@@ -381,13 +716,35 @@ final class RosterDataRepository
 
         $validSubjectIds = $this->subjectIdsForSchool($schoolId, $subjectIds);
         $stmt = $this->db->prepare("
-            INSERT IGNORE INTO opleiding_vakken (opleiding_id, vak_id, created_at)
-            VALUES (:opleiding_id, :vak_id, NOW())
+            INSERT IGNORE INTO lokaal_vakken (lokaal_id, vak_id, created_at)
+            VALUES (:lokaal_id, :vak_id, NOW())
         ");
 
         foreach ($validSubjectIds as $subjectId) {
             $stmt->execute([
-                'opleiding_id' => $programId,
+                'lokaal_id' => $roomId,
+                'vak_id' => $subjectId,
+            ]);
+        }
+    }
+
+    private function syncTeacherSubjects(string $teacherId, string $schoolId, array $subjectIds): void
+    {
+        $subjectIds = array_values(array_unique(array_filter($subjectIds, static fn (mixed $id): bool => is_string($id) && $id !== '')));
+
+        if ($subjectIds === []) {
+            return;
+        }
+
+        $validSubjectIds = $this->subjectIdsForSchool($schoolId, $subjectIds);
+        $stmt = $this->db->prepare("
+            INSERT IGNORE INTO leraar_vakken (user_id, vak_id, created_at)
+            VALUES (:user_id, :vak_id, NOW())
+        ");
+
+        foreach ($validSubjectIds as $subjectId) {
+            $stmt->execute([
+                'user_id' => $teacherId,
                 'vak_id' => $subjectId,
             ]);
         }
@@ -419,6 +776,72 @@ final class RosterDataRepository
         return array_column($stmt->fetchAll(), 'id');
     }
 
+    private function periodIdsForSchool(string $schoolId, array $periodIds): array
+    {
+        $periodIds = array_values(array_unique(array_filter($periodIds, static fn (mixed $id): bool => is_string($id) && $id !== '')));
+
+        if ($periodIds === []) {
+            return [];
+        }
+
+        $placeholders = [];
+        $params = ['school_id' => $schoolId];
+
+        foreach ($periodIds as $index => $periodId) {
+            $key = 'period_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $periodId;
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT sp.id
+            FROM schooljaar_periodes sp
+            INNER JOIN schooljaren sj ON sj.id = sp.schooljaar_id
+            WHERE sj.school_id = :school_id
+              AND sp.id IN (" . implode(', ', $placeholders) . ")
+        ");
+        $stmt->execute($params);
+
+        return array_column($stmt->fetchAll(), 'id');
+    }
+
+    private function periodIdsFromHours(array $subjectHours): array
+    {
+        $periodIds = [];
+        foreach ($subjectHours as $hoursByPeriod) {
+            if (is_array($hoursByPeriod)) {
+                $periodIds = array_merge($periodIds, array_keys($hoursByPeriod));
+            }
+        }
+
+        return array_values(array_unique(array_filter($periodIds, static fn (mixed $id): bool => is_string($id) && $id !== '')));
+    }
+
+    private function normalHoursForSubject(mixed $hoursByPeriod): array
+    {
+        if (!is_array($hoursByPeriod)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($hoursByPeriod as $periodId => $hours) {
+            if (!is_string($periodId) || $periodId === '') {
+                continue;
+            }
+
+            $normalized[$periodId] = max(0, min(40, (int) $hours));
+        }
+
+        return $normalized;
+    }
+
+    private function defaultHoursForSubject(array $hoursByPeriod): int
+    {
+        $positiveHours = array_values(array_filter($hoursByPeriod, static fn (int $hours): bool => $hours > 0));
+
+        return $positiveHours !== [] ? (int) $positiveHours[0] : 0;
+    }
+
     private function subjectsByProgram(array $programIds): array
     {
         $programIds = array_values(array_filter($programIds, static fn (mixed $id): bool => is_string($id) && $id !== ''));
@@ -437,10 +860,19 @@ final class RosterDataRepository
         }
 
         $stmt = $this->db->prepare("
-            SELECT ov.opleiding_id, v.id, v.naam_encrypted, v.code
+            SELECT
+                ov.opleiding_id,
+                v.id,
+                v.naam_encrypted,
+                v.code,
+                ov.uren_per_week,
+                ov.keuzevak,
+                GROUP_CONCAT(CONCAT(oph.periode_id, ':', oph.uren_per_week) SEPARATOR ',') AS periode_uren
             FROM opleiding_vakken ov
             INNER JOIN vakken v ON v.id = ov.vak_id
+            LEFT JOIN opleiding_vak_periode_uren oph ON oph.opleiding_id = ov.opleiding_id AND oph.vak_id = ov.vak_id
             WHERE ov.opleiding_id IN (" . implode(', ', $placeholders) . ")
+            GROUP BY ov.opleiding_id, v.id, v.naam_encrypted, v.code, ov.uren_per_week, ov.keuzevak
             ORDER BY v.code IS NULL, v.code, v.created_at
         ");
         $stmt->execute($params);
@@ -451,10 +883,191 @@ final class RosterDataRepository
                 'id' => $row['id'],
                 'naam' => $this->decrypt((string) $row['naam_encrypted']),
                 'code' => $row['code'],
+                'uren_per_week' => (int) ($row['uren_per_week'] ?? 0),
+                'keuzevak' => (int) ($row['keuzevak'] ?? 0) === 1,
+                'periode_uren' => $this->parsePeriodHours((string) ($row['periode_uren'] ?? '')),
             ];
         }
 
         return $subjects;
+    }
+
+    private function parsePeriodHours(string $value): array
+    {
+        if ($value === '') {
+            return [];
+        }
+
+        $hours = [];
+        foreach (explode(',', $value) as $entry) {
+            [$periodId, $amount] = array_pad(explode(':', $entry, 2), 2, null);
+            if (is_string($periodId) && $periodId !== '' && is_numeric($amount)) {
+                $hours[$periodId] = (int) $amount;
+            }
+        }
+
+        return $hours;
+    }
+
+    private function subjectsByRoom(array $roomIds): array
+    {
+        $roomIds = array_values(array_filter($roomIds, static fn (mixed $id): bool => is_string($id) && $id !== ''));
+
+        if ($roomIds === []) {
+            return [];
+        }
+
+        $placeholders = [];
+        $params = [];
+
+        foreach ($roomIds as $index => $roomId) {
+            $key = 'room_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $roomId;
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT lv.lokaal_id, v.id, v.naam_encrypted, v.code
+            FROM lokaal_vakken lv
+            INNER JOIN vakken v ON v.id = lv.vak_id
+            WHERE lv.lokaal_id IN (" . implode(', ', $placeholders) . ")
+            ORDER BY v.code IS NULL, v.code, v.created_at
+        ");
+        $stmt->execute($params);
+        $subjects = [];
+
+        foreach ($stmt->fetchAll() as $row) {
+            $subjects[(string) $row['lokaal_id']][] = [
+                'id' => $row['id'],
+                'naam' => $this->decrypt((string) $row['naam_encrypted']),
+                'code' => $row['code'],
+            ];
+        }
+
+        return $subjects;
+    }
+
+    private function subjectsByTeacher(array $teacherIds): array
+    {
+        $teacherIds = array_values(array_filter($teacherIds, static fn (mixed $id): bool => is_string($id) && $id !== ''));
+
+        if ($teacherIds === []) {
+            return [];
+        }
+
+        $placeholders = [];
+        $params = [];
+
+        foreach ($teacherIds as $index => $teacherId) {
+            $key = 'teacher_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $teacherId;
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT lv.user_id, v.id, v.naam_encrypted, v.code
+            FROM leraar_vakken lv
+            INNER JOIN vakken v ON v.id = lv.vak_id
+            WHERE lv.user_id IN (" . implode(', ', $placeholders) . ")
+            ORDER BY v.code IS NULL, v.code, v.created_at
+        ");
+        $stmt->execute($params);
+        $subjects = [];
+
+        foreach ($stmt->fetchAll() as $row) {
+            $subjects[(string) $row['user_id']][] = [
+                'id' => $row['id'],
+                'naam' => $this->decrypt((string) $row['naam_encrypted']),
+                'code' => $row['code'],
+            ];
+        }
+
+        return $subjects;
+    }
+
+    private function teacherBelongsToSchool(string $teacherId, string $schoolId): bool
+    {
+        $stmt = $this->db->prepare("
+            SELECT 1
+            FROM users
+            WHERE id = :id
+              AND school_id = :school_id
+              AND role = 'leraar'
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'id' => $teacherId,
+            'school_id' => $schoolId,
+        ]);
+
+        return (bool) $stmt->fetchColumn();
+    }
+
+    private function locationBelongsToSchool(string $locationId, string $schoolId): bool
+    {
+        $stmt = $this->db->prepare("
+            SELECT 1
+            FROM locaties
+            WHERE id = :id
+              AND school_id = :school_id
+              AND active = 1
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'id' => $locationId,
+            'school_id' => $schoolId,
+        ]);
+
+        return (bool) $stmt->fetchColumn();
+    }
+
+    private function locationIsExternal(string $locationId, string $schoolId): bool
+    {
+        $stmt = $this->db->prepare("
+            SELECT extern
+            FROM locaties
+            WHERE id = :id
+              AND school_id = :school_id
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'id' => $locationId,
+            'school_id' => $schoolId,
+        ]);
+
+        return (int) $stmt->fetchColumn() === 1;
+    }
+
+    private function emailBelongsToAnotherUser(string $email, string $teacherId): bool
+    {
+        $stmt = $this->db->prepare("
+            SELECT 1
+            FROM users
+            WHERE email = :email
+              AND id <> :id
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'email' => $email,
+            'id' => $teacherId,
+        ]);
+
+        return (bool) $stmt->fetchColumn();
+    }
+
+    private function normalizeAvailabilitySlots(array $availableSlots): array
+    {
+        $allowed = [];
+        foreach (['ma', 'di', 'wo', 'do', 'vr'] as $day) {
+            for ($period = 1; $period <= 9; $period++) {
+                $allowed[] = $day . '-' . $period;
+            }
+        }
+
+        return array_values(array_intersect(
+            $allowed,
+            array_values(array_unique(array_filter($availableSlots, static fn (mixed $slot): bool => is_string($slot) && $slot !== ''))),
+        ));
     }
 
     private function programBelongsToSchool(string $programId, string $schoolId): bool
@@ -493,6 +1106,14 @@ final class RosterDataRepository
         ]);
 
         return (bool) $stmt->fetchColumn();
+    }
+
+    private function assertValidPeriodWeeks(int $weekFrom, int $weekTo): void
+    {
+        if ($weekFrom < 1 || $weekFrom > 53 || $weekTo < 1 || $weekTo > 53) {
+            throw new \InvalidArgumentException('Weeknummers moeten tussen 1 en 53 liggen.');
+        }
+
     }
 
     private function schoolScopeSql(UserContext $user, string $schoolAlias): array

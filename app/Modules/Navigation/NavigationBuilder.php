@@ -14,7 +14,6 @@ final class NavigationBuilder
 
         $groups = [
             'Hoofdmenu' => [
-                new NavigationItem('dashboard', 'Dashboard', '/', 'calendar'),
                 new NavigationItem('roostar-admin', 'Roostar Admin', '/roostar-admin', 'platform', 'HQ'),
                 new NavigationItem('rooster', 'Rooster', '/rooster', 'roster', 'v12'),
                 new NavigationItem('rooster-genereren', 'Rooster genereren', '/roosters/genereren', 'bolt', 'AI'),

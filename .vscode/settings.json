@@ -1,0 +1,7 @@
+{
+  "php.validate.executablePath": "/usr/local/bin/php",
+  "php.suggest.basic": false,
+  "files.exclude": {
+    "**/.vscode/**": false
+  }
+}

@@ -1,6 +1,19 @@
 <?php
 $schools = $schools ?? [];
 $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '';
+$periodsBySchoolYear = [];
+foreach (($periods ?? []) as $period) {
+    $periodsBySchoolYear[(string) $period['schooljaar_id']][] = $period;
+}
+$teacherDays = ['ma' => 'Ma', 'di' => 'Di', 'wo' => 'Wo', 'do' => 'Do', 'vr' => 'Vr'];
+$teacherDayLabels = ['ma' => 'Maandag', 'di' => 'Dinsdag', 'wo' => 'Woensdag', 'do' => 'Donderdag', 'vr' => 'Vrijdag'];
+$teacherPeriods = range(1, 9);
+$allTeacherSlots = [];
+foreach (array_keys($teacherDays) as $teacherDayKey) {
+    foreach ($teacherPeriods as $teacherPeriod) {
+        $allTeacherSlots[] = $teacherDayKey . '-' . $teacherPeriod;
+    }
+}
 ?>
 
 <section class="card overview-card">
@@ -90,26 +103,39 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
             <th>School</th>
             <th>Start</th>
             <th>Einde</th>
+            <th>Periodes</th>
             <th>Status</th>
             <th>Acties</th>
           </tr>
         </thead>
         <tbody>
           <?php foreach (($schoolYears ?? []) as $schoolYear): ?>
+            <?php $schoolYearPeriods = $periodsBySchoolYear[(string) $schoolYear['id']] ?? []; ?>
             <tr>
               <td><strong><?= htmlspecialchars((string) $schoolYear['naam']) ?></strong></td>
               <td class="muted"><?= htmlspecialchars((string) $schoolYear['school_naam']) ?></td>
               <td class="muted"><?= htmlspecialchars(date('d-m-Y', strtotime((string) $schoolYear['startdatum']))) ?></td>
               <td class="muted"><?= htmlspecialchars(date('d-m-Y', strtotime((string) $schoolYear['einddatum']))) ?></td>
+              <td>
+                <div class="inline-pill-list">
+                  <?php foreach ($schoolYearPeriods as $period): ?>
+                    <span class="soft-pill"><?= htmlspecialchars((string) $period['naam']) ?> · wk <?= htmlspecialchars((string) $period['week_van']) ?>-<?= htmlspecialchars((string) $period['week_tot']) ?></span>
+                  <?php endforeach; ?>
+                  <?php if ($schoolYearPeriods === []): ?>
+                    <span class="muted">Geen periodes</span>
+                  <?php endif; ?>
+                </div>
+              </td>
               <td><span class="status <?= !empty($schoolYear['active']) ? 'st-done' : 'st-wait' ?>"><?= !empty($schoolYear['active']) ? 'Actief' : 'Inactief' ?></span></td>
               <td>
                 <button class="btn btn-outline btn-sm" type="button" data-open-modal="schoolyear-edit-<?= htmlspecialchars((string) $schoolYear['id']) ?>">Bewerken</button>
+                <button class="btn btn-outline btn-sm" type="button" data-open-modal="period-manage-<?= htmlspecialchars((string) $schoolYear['id']) ?>">Periodes</button>
               </td>
             </tr>
           <?php endforeach; ?>
 
           <?php if (empty($schoolYears)): ?>
-            <tr><td colspan="6" class="muted">Nog geen schooljaren aangemaakt.</td></tr>
+            <tr><td colspan="7" class="muted">Nog geen schooljaren aangemaakt.</td></tr>
           <?php endif; ?>
         </tbody>
       </table>
@@ -165,6 +191,103 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
             <button class="btn btn-dark" type="submit">Schooljaar opslaan</button>
           </div>
         </form>
+      </div>
+    </div>
+  <?php endforeach; ?>
+
+  <?php foreach (($schoolYears ?? []) as $schoolYear): ?>
+    <?php $schoolYearPeriods = $periodsBySchoolYear[(string) $schoolYear['id']] ?? []; ?>
+    <div id="period-manage-<?= htmlspecialchars((string) $schoolYear['id']) ?>" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="period-manage-title-<?= htmlspecialchars((string) $schoolYear['id']) ?>" hidden>
+      <div class="modal modal-xl app-modal">
+        <div class="modal-head">
+          <div>
+            <div id="period-manage-title-<?= htmlspecialchars((string) $schoolYear['id']) ?>" class="modal-title">Periodes beheren</div>
+            <div class="muted text-sm"><?= htmlspecialchars((string) $schoolYear['naam']) ?> · <?= htmlspecialchars((string) $schoolYear['school_naam']) ?></div>
+          </div>
+          <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="period-manager">
+            <div class="period-manager-list">
+              <?php if ($schoolYearPeriods !== []): ?>
+                <div class="period-manager-head">
+                  <span>Periode</span>
+                  <span>Week van</span>
+                  <span>Week tot</span>
+                  <span>Status</span>
+                  <span>Acties</span>
+                </div>
+              <?php endif; ?>
+              <?php foreach ($schoolYearPeriods as $period): ?>
+                <form method="post" action="/schooljaar/periodes/bewerk" class="period-manager-row">
+                  <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                  <input type="hidden" name="schooljaar_id" value="<?= htmlspecialchars((string) $schoolYear['id']) ?>">
+                  <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $schoolYear['school_id']) ?>">
+                  <input type="hidden" name="periode_id" value="<?= htmlspecialchars((string) $period['id']) ?>">
+                  <div class="form-group">
+                    <label class="form-label sr-only">Naam</label>
+                    <input class="form-input" type="text" name="naam" value="<?= htmlspecialchars((string) $period['naam']) ?>" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label sr-only">Week van</label>
+                    <input class="form-input" type="number" name="week_van" min="1" max="53" value="<?= (int) $period['week_van'] ?>" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label sr-only">Week tot</label>
+                    <input class="form-input" type="number" name="week_tot" min="1" max="53" value="<?= (int) $period['week_tot'] ?>" required>
+                  </div>
+                  <label class="period-active-toggle">
+                    <input type="hidden" name="active" value="0">
+                    <input type="checkbox" name="active" value="1" <?= !empty($period['active']) ? 'checked' : '' ?>>
+                    <span>Actief</span>
+                  </label>
+                  <div class="period-manager-actions">
+                    <button class="btn btn-dark btn-sm" type="submit">Opslaan</button>
+                    <button class="btn btn-outline btn-sm danger-soft" type="submit" form="period-delete-<?= htmlspecialchars((string) $period['id']) ?>">Verwijderen</button>
+                  </div>
+                </form>
+                <form id="period-delete-<?= htmlspecialchars((string) $period['id']) ?>" method="post" action="/schooljaar/periodes/verwijder">
+                  <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                  <input type="hidden" name="schooljaar_id" value="<?= htmlspecialchars((string) $schoolYear['id']) ?>">
+                  <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $schoolYear['school_id']) ?>">
+                  <input type="hidden" name="periode_id" value="<?= htmlspecialchars((string) $period['id']) ?>">
+                </form>
+              <?php endforeach; ?>
+              <?php if ($schoolYearPeriods === []): ?>
+                <div class="period-manager-empty">Nog geen periodes voor dit schooljaar.</div>
+              <?php endif; ?>
+            </div>
+
+            <form method="post" action="/schooljaar/periodes" class="period-manager-create">
+              <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+              <input type="hidden" name="schooljaar_id" value="<?= htmlspecialchars((string) $schoolYear['id']) ?>">
+              <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $schoolYear['school_id']) ?>">
+              <div class="period-manager-create-head">
+                <strong>Periode toevoegen</strong>
+              </div>
+              <div class="period-manager-create-grid">
+                <div class="form-group">
+                  <label class="form-label sr-only">Naam</label>
+                  <input class="form-input" type="text" name="naam" placeholder="Periode 1" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label sr-only">Week van</label>
+                  <input class="form-input" type="number" name="week_van" min="1" max="53" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label sr-only">Week tot</label>
+                  <input class="form-input" type="number" name="week_tot" min="1" max="53" required>
+                </div>
+                <button class="btn btn-dark btn-sm" type="submit">Toevoegen</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-outline" type="button" data-close-modal>Sluiten</button>
+        </div>
       </div>
     </div>
   <?php endforeach; ?>
@@ -486,6 +609,40 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
 <?php endif; ?>
 
 <?php if (($activeTab ?? 'vakken') === 'lokalen'): ?>
+  <div id="location-create-modal" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="location-create-title" hidden>
+    <div class="modal modal-lg app-modal">
+      <div class="modal-head">
+        <div>
+          <div id="location-create-title" class="modal-title">Locatie aanmaken</div>
+          <div class="muted text-sm">Gebruik locaties voor eigen gebouwen en externe leslocaties.</div>
+        </div>
+        <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <form method="post" action="/locaties">
+        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+        <input type="hidden" name="school_id" value="<?= htmlspecialchars($singleSchoolId !== '' ? $singleSchoolId : (string) ($schools[0]['id'] ?? '')) ?>">
+        <div class="modal-body">
+          <div class="app-modal-grid room-modal-grid">
+            <div class="form-group">
+              <label class="form-label">Locatie</label>
+              <input class="form-input" type="text" name="naam" placeholder="Sporthal De Brug" required>
+            </div>
+            <label class="modal-picker-item">
+              <input type="checkbox" name="extern" value="1">
+              <span><strong>Externe locatie</strong><small>Buiten het eigen schoolgebouw</small></span>
+            </label>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-outline" type="button" data-close-modal>Annuleren</button>
+          <button class="btn btn-dark" type="submit">Locatie aanmaken</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="room-create-modal" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="room-create-title" hidden>
     <div class="modal modal-lg app-modal">
       <div class="modal-head">
@@ -500,7 +657,7 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
       <form method="post" action="/lokalen">
         <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
         <div class="modal-body">
-          <div class="app-modal-grid">
+          <div class="app-modal-grid room-modal-grid">
             <div class="form-group">
               <label class="form-label">School</label>
               <select class="form-select" name="school_id" required>
@@ -513,6 +670,17 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
               </select>
             </div>
             <div class="form-group">
+              <label class="form-label">Locatie</label>
+              <select class="form-select" name="locatie_id" required data-room-location-select>
+                <option value="">Kies een locatie</option>
+                <?php foreach (($locations ?? []) as $location): ?>
+                  <option value="<?= htmlspecialchars((string) $location['id']) ?>" data-external="<?= !empty($location['extern']) ? '1' : '0' ?>">
+                    <?= htmlspecialchars((string) $location['naam']) ?><?= !empty($location['extern']) ? ' · extern' : '' ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="form-group">
               <label class="form-label">Lokaal</label>
               <input class="form-input" type="text" name="naam" required>
             </div>
@@ -521,6 +689,49 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
               <input class="form-input" type="number" name="capaciteit" min="1">
             </div>
           </div>
+          <div class="form-group room-external-hours" data-room-external-hours hidden>
+            <div class="availability-tools">
+              <label class="form-label">Inzetbare uren voor dit externe lokaal</label>
+              <div class="availability-actions">
+                <button class="btn btn-ghost btn-sm" type="button" data-check-grid="all">Alles selecteren</button>
+                <button class="btn btn-ghost btn-sm" type="button" data-check-grid="none">Deselecteren</button>
+              </div>
+            </div>
+            <div class="teacher-availability-grid" style="--day-count: <?= count($teacherDays) ?>">
+              <div class="teacher-availability-corner">Uur</div>
+              <?php foreach ($teacherDays as $label): ?>
+                <div class="teacher-availability-head"><?= htmlspecialchars($label) ?></div>
+              <?php endforeach; ?>
+              <?php foreach ($teacherPeriods as $period): ?>
+                <div class="teacher-availability-hour"><?= htmlspecialchars((string) $period) ?></div>
+                <?php foreach (array_keys($teacherDays) as $dayKey): ?>
+                  <?php $slotKey = $dayKey . '-' . $period; ?>
+                  <label class="teacher-slot-check" title="<?= htmlspecialchars($teacherDayLabels[$dayKey] . ' uur ' . $period) ?>">
+                    <input type="checkbox" name="available_slots[]" value="<?= htmlspecialchars($slotKey) ?>" checked>
+                  </label>
+                <?php endforeach; ?>
+              <?php endforeach; ?>
+            </div>
+          </div>
+        <div class="form-group">
+          <label class="form-label">Vakken die in dit lokaal gegeven kunnen worden</label>
+          <div class="modal-picker-list">
+            <?php foreach (($subjects ?? []) as $subject): ?>
+              <label class="modal-picker-item">
+                <input type="checkbox" name="subject_ids[]" value="<?= htmlspecialchars((string) $subject['id']) ?>">
+                <span>
+                  <strong><?= htmlspecialchars((string) $subject['naam']) ?></strong>
+                  <?php if (!empty($subject['code'])): ?>
+                    <small><?= htmlspecialchars((string) $subject['code']) ?></small>
+                  <?php endif; ?>
+                </span>
+              </label>
+            <?php endforeach; ?>
+            <?php if (empty($subjects)): ?>
+              <span class="muted text-sm">Maak eerst vakken aan.</span>
+            <?php endif; ?>
+          </div>
+        </div>
         </div>
         <div class="modal-foot">
           <button class="btn btn-outline" type="button" data-close-modal>Annuleren</button>
@@ -534,9 +745,10 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
     <div class="tasks-head">
       <div>
         <div class="eyebrow">Lokalen</div>
-        <div class="muted text-sm">Alle lokalen binnen jouw scope.</div>
+        <div class="muted text-sm">Alle lokalen en locaties binnen jouw scope.</div>
       </div>
       <div class="view-actions">
+        <button class="btn btn-outline" type="button" data-open-modal="location-create-modal">Locatie aanmaken</button>
         <button class="btn btn-dark" type="button" data-open-modal="room-create-modal">Lokaal aanmaken</button>
       </div>
     </div>
@@ -547,7 +759,8 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
           <tr>
             <th>Lokaal</th>
             <th>Capaciteit</th>
-            <th>School</th>
+            <th>Vakken</th>
+            <th>Locatie</th>
             <th>Status</th>
             <th>Acties</th>
           </tr>
@@ -557,7 +770,19 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
             <tr>
               <td><strong><?= htmlspecialchars((string) $room['naam']) ?></strong></td>
               <td class="muted"><?= htmlspecialchars((string) ($room['capaciteit'] ?? '-')) ?></td>
-              <td class="muted"><?= htmlspecialchars((string) $room['school_naam']) ?></td>
+              <td class="muted">
+                <?php if (!empty($room['subjects'])): ?>
+                  <?= htmlspecialchars(implode(', ', array_map(static fn (array $subject): string => (string) ($subject['code'] ?: $subject['naam']), $room['subjects']))) ?>
+                <?php else: ?>
+                  -
+                <?php endif; ?>
+              </td>
+              <td class="muted">
+                <?= htmlspecialchars((string) $room['locatie_naam']) ?>
+                <?php if (!empty($room['locatie_extern'])): ?>
+                  <span class="soft-pill">Extern</span>
+                <?php endif; ?>
+              </td>
               <td><span class="status <?= !empty($room['active']) ? 'st-done' : 'st-wait' ?>"><?= !empty($room['active']) ? 'Actief' : 'Inactief' ?></span></td>
               <td>
                 <button class="btn btn-outline btn-sm" type="button" data-open-modal="room-edit-<?= htmlspecialchars((string) $room['id']) ?>">Bewerken</button>
@@ -565,7 +790,7 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
             </tr>
           <?php endforeach; ?>
           <?php if (empty($rooms)): ?>
-            <tr><td colspan="5" class="muted">Nog geen lokalen aangemaakt.</td></tr>
+            <tr><td colspan="6" class="muted">Nog geen lokalen aangemaakt.</td></tr>
           <?php endif; ?>
         </tbody>
       </table>
@@ -573,12 +798,17 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
   </section>
 
   <?php foreach (($rooms ?? []) as $room): ?>
+    <?php
+      $roomSubjectIds = array_map(static fn (array $subject): string => (string) $subject['id'], $room['subjects'] ?? []);
+      $roomAvailableSlots = $room['available_slots'] ?? $allTeacherSlots;
+      $roomAvailableSlots = is_array($roomAvailableSlots) ? $roomAvailableSlots : $allTeacherSlots;
+    ?>
     <div id="room-edit-<?= htmlspecialchars((string) $room['id']) ?>" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="room-edit-title-<?= htmlspecialchars((string) $room['id']) ?>" hidden>
       <div class="modal modal-lg app-modal">
         <div class="modal-head">
           <div>
             <div id="room-edit-title-<?= htmlspecialchars((string) $room['id']) ?>" class="modal-title">Lokaal bewerken</div>
-            <div class="muted text-sm">Werk lokaalnaam, capaciteit en status bij.</div>
+            <div class="muted text-sm">Werk lokaalnaam, capaciteit, vakken en status bij.</div>
           </div>
           <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -589,10 +819,18 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
           <input type="hidden" name="lokaal_id" value="<?= htmlspecialchars((string) $room['id']) ?>">
           <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $room['school_id']) ?>">
           <div class="modal-body">
-            <div class="app-modal-grid">
+            <div class="app-modal-grid room-modal-grid">
               <div class="form-group">
-                <label class="form-label">School</label>
-                <input class="form-input" type="text" value="<?= htmlspecialchars((string) $room['school_naam']) ?>" disabled>
+                <label class="form-label">Locatie</label>
+                <select class="form-select" name="locatie_id" required data-room-location-select>
+                  <option value="">Kies een locatie</option>
+                  <?php foreach (($locations ?? []) as $location): ?>
+                    <?php if ((string) $location['school_id'] !== (string) $room['school_id']) { continue; } ?>
+                    <option value="<?= htmlspecialchars((string) $location['id']) ?>" data-external="<?= !empty($location['extern']) ? '1' : '0' ?>" <?= (string) ($room['locatie_id'] ?? '') === (string) $location['id'] ? 'selected' : '' ?>>
+                      <?= htmlspecialchars((string) $location['naam']) ?><?= !empty($location['extern']) ? ' · extern' : '' ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
               </div>
               <div class="form-group">
                 <label class="form-label">Lokaal</label>
@@ -609,6 +847,49 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
                   <input type="checkbox" name="active" value="1" <?= !empty($room['active']) ? 'checked' : '' ?>>
                   <span><strong>Actief</strong><small>Beschikbaar voor roosters</small></span>
                 </label>
+              </div>
+            </div>
+            <div class="form-group room-external-hours" data-room-external-hours <?= !empty($room['locatie_extern']) ? '' : 'hidden' ?>>
+              <div class="availability-tools">
+                <label class="form-label">Inzetbare uren voor dit externe lokaal</label>
+                <div class="availability-actions">
+                  <button class="btn btn-ghost btn-sm" type="button" data-check-grid="all">Alles selecteren</button>
+                  <button class="btn btn-ghost btn-sm" type="button" data-check-grid="none">Deselecteren</button>
+                </div>
+              </div>
+              <div class="teacher-availability-grid" style="--day-count: <?= count($teacherDays) ?>">
+                <div class="teacher-availability-corner">Uur</div>
+                <?php foreach ($teacherDays as $label): ?>
+                  <div class="teacher-availability-head"><?= htmlspecialchars($label) ?></div>
+                <?php endforeach; ?>
+                <?php foreach ($teacherPeriods as $period): ?>
+                  <div class="teacher-availability-hour"><?= htmlspecialchars((string) $period) ?></div>
+                  <?php foreach (array_keys($teacherDays) as $dayKey): ?>
+                    <?php $slotKey = $dayKey . '-' . $period; ?>
+                    <label class="teacher-slot-check" title="<?= htmlspecialchars($teacherDayLabels[$dayKey] . ' uur ' . $period) ?>">
+                      <input type="checkbox" name="available_slots[]" value="<?= htmlspecialchars($slotKey) ?>" <?= in_array($slotKey, $roomAvailableSlots, true) ? 'checked' : '' ?>>
+                    </label>
+                  <?php endforeach; ?>
+                <?php endforeach; ?>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Vakken die in dit lokaal gegeven kunnen worden</label>
+              <div class="modal-picker-list">
+                <?php foreach (($subjects ?? []) as $subject): ?>
+                  <label class="modal-picker-item">
+                    <input type="checkbox" name="subject_ids[]" value="<?= htmlspecialchars((string) $subject['id']) ?>" <?= in_array((string) $subject['id'], $roomSubjectIds, true) ? 'checked' : '' ?>>
+                    <span>
+                      <strong><?= htmlspecialchars((string) $subject['naam']) ?></strong>
+                      <?php if (!empty($subject['code'])): ?>
+                        <small><?= htmlspecialchars((string) $subject['code']) ?></small>
+                      <?php endif; ?>
+                    </span>
+                  </label>
+                <?php endforeach; ?>
+                <?php if (empty($subjects)): ?>
+                  <span class="muted text-sm">Maak eerst vakken aan.</span>
+                <?php endif; ?>
               </div>
             </div>
           </div>
@@ -669,17 +950,34 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
 
         <div class="form-group">
           <label class="form-label">Vakkenpakket</label>
-          <div class="modal-picker-list">
+          <div class="program-subject-hours-list">
+            <?php if (!empty($periods)): ?>
+              <div class="program-subject-hours-head" style="--period-count: <?= max(1, count($periods)) ?>">
+                <span>Vak</span>
+                <span>Keuze</span>
+                <?php foreach (($periods ?? []) as $period): ?>
+                  <span><?= htmlspecialchars((string) $period['naam']) ?></span>
+                <?php endforeach; ?>
+              </div>
+            <?php endif; ?>
             <?php foreach (($subjects ?? []) as $subject): ?>
-              <label class="modal-picker-item">
-                <input type="checkbox" name="subject_ids[]" value="<?= htmlspecialchars((string) $subject['id']) ?>">
-                <span>
+              <div class="program-subject-hours-row" style="--period-count: <?= max(1, count($periods)) ?>">
+                <label class="program-subject-check">
+                  <input type="checkbox" name="subject_ids[]" value="<?= htmlspecialchars((string) $subject['id']) ?>">
+                  <span>
                   <strong><?= htmlspecialchars((string) $subject['naam']) ?></strong>
                   <?php if (!empty($subject['code'])): ?>
                     <small><?= htmlspecialchars((string) $subject['code']) ?></small>
                   <?php endif; ?>
-                </span>
-              </label>
+                  </span>
+                </label>
+                <label class="program-elective-check" title="Leerlingen kunnen dit vak kiezen">
+                  <input type="checkbox" name="elective_subject_ids[]" value="<?= htmlspecialchars((string) $subject['id']) ?>">
+                </label>
+                <?php foreach (($periods ?? []) as $period): ?>
+                  <input class="form-input subject-hours-input" type="number" name="subject_hours[<?= htmlspecialchars((string) $subject['id']) ?>][<?= htmlspecialchars((string) $period['id']) ?>]" min="0" max="40" value="3" aria-label="<?= htmlspecialchars((string) $subject['naam']) ?> <?= htmlspecialchars((string) $period['naam']) ?> uren per week">
+                <?php endforeach; ?>
+              </div>
             <?php endforeach; ?>
             <?php if (empty($subjects)): ?>
               <span class="muted text-sm">Maak eerst vakken aan.</span>
@@ -750,7 +1048,14 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
   </section>
 
   <?php foreach (($programs ?? []) as $program): ?>
-    <?php $programSubjectIds = array_map(static fn (array $subject): string => (string) $subject['id'], $program['subjects'] ?? []); ?>
+    <?php
+      $programSubjectIds = array_map(static fn (array $subject): string => (string) $subject['id'], $program['subjects'] ?? []);
+      $programSubjectsById = [];
+      foreach (($program['subjects'] ?? []) as $programSubject) {
+          $programSubjectsById[(string) $programSubject['id']] = $programSubject;
+      }
+      $programPeriods = array_values(array_filter(($periods ?? []), static fn (array $period): bool => (string) ($period['school_id'] ?? '') === (string) ($program['school_id'] ?? '')));
+    ?>
     <div id="program-edit-<?= htmlspecialchars((string) $program['id']) ?>" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="program-edit-title-<?= htmlspecialchars((string) $program['id']) ?>" hidden>
       <div class="modal modal-lg app-modal">
         <div class="modal-head">
@@ -801,17 +1106,36 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
 
             <div class="form-group">
               <label class="form-label">Vakkenpakket</label>
-              <div class="modal-picker-list">
+              <div class="program-subject-hours-list">
+                <?php if (!empty($programPeriods)): ?>
+                  <div class="program-subject-hours-head" style="--period-count: <?= max(1, count($programPeriods)) ?>">
+                    <span>Vak</span>
+                    <span>Keuze</span>
+                    <?php foreach ($programPeriods as $period): ?>
+                      <span><?= htmlspecialchars((string) $period['naam']) ?></span>
+                    <?php endforeach; ?>
+                  </div>
+                <?php endif; ?>
                 <?php foreach (($subjects ?? []) as $subject): ?>
-                  <label class="modal-picker-item">
-                    <input type="checkbox" name="subject_ids[]" value="<?= htmlspecialchars((string) $subject['id']) ?>" <?= in_array((string) $subject['id'], $programSubjectIds, true) ? 'checked' : '' ?>>
-                    <span>
-                      <strong><?= htmlspecialchars((string) $subject['naam']) ?></strong>
-                      <?php if (!empty($subject['code'])): ?>
-                        <small><?= htmlspecialchars((string) $subject['code']) ?></small>
-                      <?php endif; ?>
-                    </span>
-                  </label>
+                  <?php $existingSubject = $programSubjectsById[(string) $subject['id']] ?? null; ?>
+                  <div class="program-subject-hours-row" style="--period-count: <?= max(1, count($programPeriods)) ?>">
+                    <label class="program-subject-check">
+                      <input type="checkbox" name="subject_ids[]" value="<?= htmlspecialchars((string) $subject['id']) ?>" <?= in_array((string) $subject['id'], $programSubjectIds, true) ? 'checked' : '' ?>>
+                      <span>
+                        <strong><?= htmlspecialchars((string) $subject['naam']) ?></strong>
+                        <?php if (!empty($subject['code'])): ?>
+                          <small><?= htmlspecialchars((string) $subject['code']) ?></small>
+                        <?php endif; ?>
+                      </span>
+                    </label>
+                    <label class="program-elective-check" title="Leerlingen kunnen dit vak kiezen">
+                      <input type="checkbox" name="elective_subject_ids[]" value="<?= htmlspecialchars((string) $subject['id']) ?>" <?= !empty($existingSubject['keuzevak']) ? 'checked' : '' ?>>
+                    </label>
+                    <?php foreach ($programPeriods as $period): ?>
+                      <?php $hours = (int) (($existingSubject['periode_uren'] ?? [])[(string) $period['id']] ?? ($existingSubject['uren_per_week'] ?? 0)); ?>
+                      <input class="form-input subject-hours-input" type="number" name="subject_hours[<?= htmlspecialchars((string) $subject['id']) ?>][<?= htmlspecialchars((string) $period['id']) ?>]" min="0" max="40" value="<?= $hours ?>" aria-label="<?= htmlspecialchars((string) $subject['naam']) ?> <?= htmlspecialchars((string) $period['naam']) ?> uren per week">
+                    <?php endforeach; ?>
+                  </div>
                 <?php endforeach; ?>
                 <?php if (empty($subjects)): ?>
                   <span class="muted text-sm">Maak eerst vakken aan.</span>
@@ -831,14 +1155,104 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
 <?php endif; ?>
 
 <?php if (($activeTab ?? 'vakken') === 'leraren'): ?>
+  <div id="teacher-create-modal" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="teacher-create-title" hidden>
+    <div class="modal modal-xl app-modal">
+      <div class="modal-head">
+        <div>
+          <div id="teacher-create-title" class="modal-title">Leraar aanmaken</div>
+          <div class="muted text-sm">Maak direct een account aan en leg vakken en werkuren vast.</div>
+        </div>
+        <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <form method="post" action="/leraren">
+        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+        <div class="modal-body">
+          <div class="app-modal-grid teacher-modal-grid">
+            <div class="form-group">
+              <label class="form-label">School</label>
+              <select class="form-select" name="school_id" required>
+                <?php if ($singleSchoolId === ''): ?>
+                  <option value="">Kies een school</option>
+                <?php endif; ?>
+                <?php foreach ($schools as $school): ?>
+                  <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Naam</label>
+              <input class="form-input" type="text" name="name" placeholder="Voornaam Achternaam" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">E-mail</label>
+              <input class="form-input" type="email" name="email" placeholder="leraar@roostar.local" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Wachtwoord</label>
+              <input class="form-input" type="password" name="password" minlength="8" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Berekende uren</label>
+              <div class="calculated-hours" data-teacher-hours-summary>40 uur/week · max 8 per dag</div>
+            </div>
+          </div>
+
+          <div class="teacher-editor-grid">
+            <div>
+              <div class="form-label">Vakken</div>
+              <div class="teacher-subject-list">
+                <?php foreach (($subjects ?? []) as $subject): ?>
+                  <label class="modal-picker-item">
+                    <input type="checkbox" name="subject_ids[]" value="<?= htmlspecialchars((string) $subject['id']) ?>">
+                    <span>
+                      <strong><?= htmlspecialchars((string) $subject['naam']) ?></strong>
+                      <small><?= htmlspecialchars((string) ($subject['code'] ?? '')) ?></small>
+                    </span>
+                  </label>
+                <?php endforeach; ?>
+                <?php if (empty($subjects)): ?>
+                  <span class="muted text-sm">Maak eerst vakken aan.</span>
+                <?php endif; ?>
+              </div>
+            </div>
+            <div>
+              <div class="form-label">Werkuren</div>
+              <div class="teacher-availability-grid" style="--day-count: <?= count($teacherDays) ?>" data-teacher-availability-grid>
+                <div class="teacher-availability-corner">Uur</div>
+                <?php foreach ($teacherDays as $label): ?>
+                  <div class="teacher-availability-head"><?= htmlspecialchars($label) ?></div>
+                <?php endforeach; ?>
+                <?php foreach ($teacherPeriods as $period): ?>
+                  <div class="teacher-availability-hour"><?= htmlspecialchars((string) $period) ?></div>
+                  <?php foreach (array_keys($teacherDays) as $dayKey): ?>
+                    <?php $slotKey = $dayKey . '-' . $period; ?>
+                    <label class="teacher-slot-check" title="<?= htmlspecialchars($teacherDayLabels[$dayKey] . ' uur ' . $period) ?>">
+                      <input type="checkbox" name="available_slots[]" value="<?= htmlspecialchars($slotKey) ?>" checked>
+                    </label>
+                  <?php endforeach; ?>
+                <?php endforeach; ?>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-outline" type="button" data-close-modal>Annuleren</button>
+          <button class="btn btn-dark" type="submit">Leraar aanmaken</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <section class="card tasks-card">
     <div class="tasks-head">
       <div>
         <div class="eyebrow">Leraren</div>
-        <div class="muted text-sm">Leraren komen uit gebruikersbeheer, zodat account, rechten en roosterprofiel dezelfde bron delen.</div>
+        <div class="muted text-sm">Account, bevoegdheden en roosterprofiel staan hier bij elkaar.</div>
       </div>
       <div class="view-actions">
-        <a class="btn btn-dark" href="/gebruikers/nieuw">Nieuwe leraar</a>
+        <button class="btn btn-dark" type="button" data-open-modal="teacher-create-modal">Nieuwe leraar</button>
       </div>
     </div>
 
@@ -849,7 +1263,10 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
             <th>Naam</th>
             <th>E-mail</th>
             <th>School</th>
+            <th>Vakken</th>
+            <th>Uren</th>
             <th>Status</th>
+            <th>Acties</th>
           </tr>
         </thead>
         <tbody>
@@ -863,15 +1280,128 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
               </td>
               <td class="muted"><?= htmlspecialchars((string) $teacher['email']) ?></td>
               <td class="muted"><?= htmlspecialchars((string) $teacher['school_naam']) ?></td>
+              <td>
+                <div class="inline-pill-list">
+                  <?php foreach (($teacher['subjects'] ?? []) as $subject): ?>
+                    <span class="soft-pill"><?= htmlspecialchars((string) ($subject['code'] ?: $subject['naam'])) ?></span>
+                  <?php endforeach; ?>
+                  <?php if (empty($teacher['subjects'])): ?>
+                    <span class="muted">Geen vakken</span>
+                  <?php endif; ?>
+                </div>
+              </td>
+              <td class="muted"><?= htmlspecialchars((string) $teacher['max_uren_per_week']) ?> wk · <?= htmlspecialchars((string) $teacher['max_uren_per_dag']) ?> dag</td>
               <td><span class="status <?= !empty($teacher['active']) ? 'st-done' : 'st-wait' ?>"><?= !empty($teacher['active']) ? 'Actief' : 'Inactief' ?></span></td>
+              <td class="actions-cell">
+                <div class="table-actions">
+                  <button class="btn btn-outline btn-sm" type="button" data-open-modal="teacher-edit-<?= htmlspecialchars((string) $teacher['id']) ?>">Bewerken</button>
+                  <form method="post" action="/leraren/verwijder">
+                    <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                    <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $teacher['school_id']) ?>">
+                    <input type="hidden" name="teacher_id" value="<?= htmlspecialchars((string) $teacher['id']) ?>">
+                    <button class="btn btn-ghost btn-sm btn-danger-link" type="submit">Verwijderen</button>
+                  </form>
+                </div>
+              </td>
             </tr>
           <?php endforeach; ?>
 
           <?php if (empty($teachers)): ?>
-            <tr><td colspan="4" class="muted">Nog geen leraren gevonden. Maak eerst een gebruiker met rol leraar aan.</td></tr>
+            <tr><td colspan="7" class="muted">Nog geen leraren gevonden.</td></tr>
           <?php endif; ?>
         </tbody>
       </table>
     </div>
   </section>
+
+  <?php foreach (($teachers ?? []) as $teacher): ?>
+    <?php
+      $teacherSubjectIds = array_map(static fn (array $subject): string => (string) $subject['id'], $teacher['subjects'] ?? []);
+      $teacherAvailableSlots = $teacher['available_slots'] ?? $allTeacherSlots;
+      $teacherAvailableSlots = is_array($teacherAvailableSlots) ? $teacherAvailableSlots : $allTeacherSlots;
+    ?>
+    <div id="teacher-edit-<?= htmlspecialchars((string) $teacher['id']) ?>" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="teacher-edit-title-<?= htmlspecialchars((string) $teacher['id']) ?>" hidden>
+      <div class="modal modal-xl app-modal">
+        <div class="modal-head">
+          <div>
+            <div id="teacher-edit-title-<?= htmlspecialchars((string) $teacher['id']) ?>" class="modal-title">Leraar bewerken</div>
+            <div class="muted text-sm"><?= htmlspecialchars((string) $teacher['email']) ?></div>
+          </div>
+          <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <form method="post" action="/leraren/bewerk">
+          <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+          <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $teacher['school_id']) ?>">
+          <input type="hidden" name="teacher_id" value="<?= htmlspecialchars((string) $teacher['id']) ?>">
+          <div class="modal-body">
+            <div class="app-modal-grid teacher-modal-grid">
+              <div class="form-group">
+                <label class="form-label">Naam</label>
+                <input class="form-input" type="text" name="name" value="<?= htmlspecialchars((string) $teacher['naam']) ?>" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">E-mail</label>
+                <input class="form-input" type="email" name="email" value="<?= htmlspecialchars((string) $teacher['email']) ?>" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Berekende uren</label>
+                <div class="calculated-hours" data-teacher-hours-summary><?= htmlspecialchars((string) $teacher['max_uren_per_week']) ?> uur/week · max <?= htmlspecialchars((string) $teacher['max_uren_per_dag']) ?> per dag</div>
+              </div>
+              <label class="modal-picker-item">
+                <input type="checkbox" name="active" value="1" <?= !empty($teacher['active']) ? 'checked' : '' ?>>
+                <span>
+                  <strong>Actief</strong>
+                  <small>Beschikbaar in de roosterplanning</small>
+                </span>
+              </label>
+            </div>
+
+            <div class="teacher-editor-grid">
+              <div>
+                <div class="form-label">Vakken</div>
+                <div class="teacher-subject-list">
+                  <?php foreach (($subjects ?? []) as $subject): ?>
+                    <label class="modal-picker-item">
+                      <input type="checkbox" name="subject_ids[]" value="<?= htmlspecialchars((string) $subject['id']) ?>" <?= in_array((string) $subject['id'], $teacherSubjectIds, true) ? 'checked' : '' ?>>
+                      <span>
+                        <strong><?= htmlspecialchars((string) $subject['naam']) ?></strong>
+                        <small><?= htmlspecialchars((string) ($subject['code'] ?? '')) ?></small>
+                      </span>
+                    </label>
+                  <?php endforeach; ?>
+                  <?php if (empty($subjects)): ?>
+                    <span class="muted text-sm">Maak eerst vakken aan.</span>
+                  <?php endif; ?>
+                </div>
+              </div>
+              <div>
+                <div class="form-label">Werkuren</div>
+                <div class="teacher-availability-grid" style="--day-count: <?= count($teacherDays) ?>" data-teacher-availability-grid>
+                  <div class="teacher-availability-corner">Uur</div>
+                  <?php foreach ($teacherDays as $label): ?>
+                    <div class="teacher-availability-head"><?= htmlspecialchars($label) ?></div>
+                  <?php endforeach; ?>
+                  <?php foreach ($teacherPeriods as $period): ?>
+                    <div class="teacher-availability-hour"><?= htmlspecialchars((string) $period) ?></div>
+                    <?php foreach (array_keys($teacherDays) as $dayKey): ?>
+                      <?php $slotKey = $dayKey . '-' . $period; ?>
+                      <label class="teacher-slot-check" title="<?= htmlspecialchars($teacherDayLabels[$dayKey] . ' uur ' . $period) ?>">
+                        <input type="checkbox" name="available_slots[]" value="<?= htmlspecialchars($slotKey) ?>" <?= in_array($slotKey, $teacherAvailableSlots, true) ? 'checked' : '' ?>>
+                      </label>
+                    <?php endforeach; ?>
+                  <?php endforeach; ?>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button class="btn btn-outline" type="button" data-close-modal>Annuleren</button>
+            <button class="btn btn-dark" type="submit">Leraar opslaan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  <?php endforeach; ?>
 <?php endif; ?>

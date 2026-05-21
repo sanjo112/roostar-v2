@@ -153,6 +153,18 @@ document.addEventListener('click', async (event) => {
     }
   }
 
+  const gridButton = event.target.closest('[data-check-grid]');
+
+  if (gridButton) {
+    const wrapper = gridButton.closest('[data-room-external-hours], .teacher-editor-grid, .form-group');
+    const checked = gridButton.getAttribute('data-check-grid') === 'all';
+    wrapper?.querySelectorAll('.teacher-availability-grid input[type="checkbox"]').forEach((input) => {
+      input.checked = checked;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    return;
+  }
+
   const modalOpen = event.target.closest('[data-open-modal]');
 
   if (modalOpen) {
@@ -185,8 +197,93 @@ document.addEventListener('click', async (event) => {
   }
 });
 
+document.addEventListener('change', (event) => {
+  if (event.target.matches('[data-room-location-select]')) {
+    const modal = event.target.closest('.modal-backdrop');
+    const selected = event.target.selectedOptions?.[0];
+    const hours = modal?.querySelector('[data-room-external-hours]');
+    if (hours) {
+      hours.hidden = selected?.getAttribute('data-external') !== '1';
+    }
+  }
+
+  if (event.target.matches('[data-student-class-select]')) {
+    updateStudentElectives(event.target.closest('.modal-backdrop'));
+  }
+
+  if (!event.target.matches('[data-teacher-availability-grid] input[type="checkbox"]')) {
+    return;
+  }
+
+  updateTeacherHoursSummary(event.target.closest('.modal-backdrop'));
+});
+
+document.querySelectorAll('.modal-backdrop').forEach((modal) => updateTeacherHoursSummary(modal));
+document.querySelectorAll('.modal-backdrop').forEach((modal) => updateStudentElectives(modal));
+
+function updateTeacherHoursSummary(scope) {
+  if (!scope) {
+    return;
+  }
+
+  const summary = scope.querySelector('[data-teacher-hours-summary]');
+  const checked = Array.from(scope.querySelectorAll('[data-teacher-availability-grid] input[type="checkbox"]:checked'));
+
+  if (!summary) {
+    return;
+  }
+
+  const dayCounts = { ma: 0, di: 0, wo: 0, do: 0, vr: 0 };
+  checked.forEach((input) => {
+    const day = String(input.value || '').split('-')[0];
+    if (Object.prototype.hasOwnProperty.call(dayCounts, day)) {
+      dayCounts[day] += 1;
+    }
+  });
+
+  const weekHours = checked.length;
+  const dayMax = Math.max(0, ...Object.values(dayCounts));
+  summary.textContent = `${weekHours} uur/week · max ${dayMax} per dag`;
+}
+
+function updateStudentElectives(scope) {
+  if (!scope) {
+    return;
+  }
+
+  const select = scope.querySelector('[data-student-class-select]');
+  const wrapper = scope.querySelector('[data-student-electives]');
+  const empty = scope.querySelector('[data-student-electives-empty]');
+
+  if (!select || !wrapper) {
+    return;
+  }
+
+  const classId = select.value || '';
+  let visibleCount = 0;
+  wrapper.querySelectorAll('[data-student-elective-class]').forEach((item) => {
+    const visible = classId !== '' && item.getAttribute('data-student-elective-class') === classId;
+    item.hidden = !visible;
+    if (!visible) {
+      item.querySelector('input[type="checkbox"]')?.removeAttribute('checked');
+      const input = item.querySelector('input[type="checkbox"]');
+      if (input) {
+        input.checked = false;
+      }
+    } else {
+      visibleCount += 1;
+    }
+  });
+
+  wrapper.hidden = classId === '';
+  if (empty) {
+    empty.hidden = classId === '' || visibleCount > 0;
+  }
+}
+
 function markNotificationsRead(notificationToggle, notificationPanel) {
   const unreadItems = Array.from(notificationPanel.querySelectorAll('.notification-panel-item:not(.is-read)'));
+  const warningItems = Array.from(notificationPanel.querySelectorAll('[data-counts-badge="1"]'));
   const ids = unreadItems
     .map((item) => item.getAttribute('data-notification-id') || '')
     .filter(Boolean);
@@ -195,9 +292,10 @@ function markNotificationsRead(notificationToggle, notificationPanel) {
 
   const count = notificationPanel.querySelector('[data-notification-count]');
   if (count) {
-    count.textContent = '0 nieuw';
+    count.textContent = '0 waarschuwingen';
   }
 
+  warningItems.forEach((item) => item.removeAttribute('data-counts-badge'));
   unreadItems.forEach((item) => {
     item.classList.add('is-read');
     item.querySelector('.notification-unread-dot')?.remove();
@@ -216,8 +314,12 @@ function markNotificationsRead(notificationToggle, notificationPanel) {
 function markOneNotificationRead(id = '') {
   const badge = document.querySelector('.notification-badge');
   const count = document.querySelector('[data-notification-count]');
+  const card = id ? document.querySelector(`[data-notification-id="${CSS.escape(id)}"]`) : null;
+  const countsForBadge = card?.getAttribute('data-counts-badge') === '1';
   const current = Number.parseInt(badge?.textContent || '0', 10);
-  const next = Math.max(0, current - 1);
+  const next = countsForBadge ? Math.max(0, current - 1) : current;
+
+  card?.removeAttribute('data-counts-badge');
 
   if (badge) {
     if (next === 0) {
@@ -228,7 +330,7 @@ function markOneNotificationRead(id = '') {
   }
 
   if (count) {
-    count.textContent = `${next} nieuw`;
+    count.textContent = `${next} waarschuwingen`;
   }
 
   if (id) {

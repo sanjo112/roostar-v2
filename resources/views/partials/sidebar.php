@@ -30,16 +30,8 @@ function icon(string $name): string
 <aside class="sidebar">
   <div class="brand">
     <a href="/" class="brand-lockup">
-      <img src="/assets/images/Roostar_logo_sidebar.png" alt="Roostar" class="brand-logo" width="150" height="44">
+      <img src="/assets/images/Roostar_logo_sidebar.png" alt="Roostar" class="brand-logo" width="132" height="39">
     </a>
-    <button class="collapse-btn" title="Inklappen" type="button">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
-    </button>
-  </div>
-
-  <div class="search-box">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-    <input placeholder="Zoeken..." aria-label="Zoeken">
   </div>
 
   <?php foreach (($navGroups ?? []) as $groupLabel => $items): ?>

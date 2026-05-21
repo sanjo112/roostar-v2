@@ -38,6 +38,7 @@ final class NotificationRepository
             FROM notifications
             WHERE user_id = :user_id
               AND read_at IS NULL
+              AND type = 'warning'
             ORDER BY created_at DESC
             LIMIT :limit
         ");
