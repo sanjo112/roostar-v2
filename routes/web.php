@@ -14,6 +14,7 @@ use Roostar\Modules\Auth\Controllers\PasswordChangeController;
 use Roostar\Modules\Auth\Controllers\ProfileController;
 use Roostar\Modules\Dashboard\DashboardController;
 use Roostar\Modules\Dashboard\ModulePlaceholderController;
+use Roostar\Modules\Platform\Controllers\PlatformAdminController;
 use Roostar\Modules\RosterData\Controllers\RosterDataController;
 use Roostar\Modules\Rosters\RosterController;
 use Roostar\Modules\Rosters\RosterPolicy;
@@ -32,6 +33,7 @@ return static function (Router $router): void {
     $passwordChange = new PasswordChangeController();
     $profile = new ProfileController();
     $placeholder = new ModulePlaceholderController();
+    $platformAdmin = new PlatformAdminController();
     $rosterData = new RosterDataController();
     $rosters = new RosterController();
     $students = new StudentController();
@@ -102,9 +104,11 @@ return static function (Router $router): void {
     $router->post('/toetsen/verwijder', [$testPlanning, 'deleteTest'], $authRequired);
     $router->post('/toetsweken/surveillance', [$testPlanning, 'saveSurveillance'], $authRequired);
     $router->post('/toetsweken/surveillance/voorstel', [$testPlanning, 'proposeSurveillance'], $authRequired);
+    $router->get('/roostar-admin', [$platformAdmin, 'index'], $authRequired);
+    $router->post('/roostar-admin/klanten', [$platformAdmin, 'storeCustomer'], $authRequired);
+    $router->post('/roostar-admin/school-admins', [$platformAdmin, 'storeSchoolAdmin'], $authRequired);
 
     foreach ([
-        '/roostar-admin' => 'roostar-admin',
         '/stage' => 'stage',
         '/settings' => 'settings',
     ] as $path => $key) {
