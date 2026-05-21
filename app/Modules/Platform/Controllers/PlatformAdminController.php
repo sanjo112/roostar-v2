@@ -76,6 +76,34 @@ final class PlatformAdminController
         });
     }
 
+    public function archiveCustomer(Request $request): Response
+    {
+        return $this->storeAction($request, function (PlatformAdminRepository $repository, string $userId) use ($request): void {
+            $schoolId = $request->string('school_id');
+            if ($schoolId === '') {
+                throw new \InvalidArgumentException('Kies een klant.');
+            }
+
+            $repository->archiveCustomer($schoolId);
+            $this->audit('platform.customer_archived', $userId, $schoolId, $request);
+            NotificationBag::success('Klant is gearchiveerd.');
+        });
+    }
+
+    public function restoreCustomer(Request $request): Response
+    {
+        return $this->storeAction($request, function (PlatformAdminRepository $repository, string $userId) use ($request): void {
+            $schoolId = $request->string('school_id');
+            if ($schoolId === '') {
+                throw new \InvalidArgumentException('Kies een klant.');
+            }
+
+            $repository->restoreCustomer($schoolId);
+            $this->audit('platform.customer_restored', $userId, $schoolId, $request);
+            NotificationBag::success('Klant is heractiveerd.');
+        });
+    }
+
     private function storeAction(Request $request, callable $callback): Response
     {
         $user = AuthSession::userContext();

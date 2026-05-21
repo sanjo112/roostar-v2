@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Roostar\Core\Http\Response;
 use Roostar\Core\Http\Middleware\AuthRequired;
 use Roostar\Core\Http\Router;
+use Roostar\Core\Access\PermissionRegistry;
 use Roostar\Modules\Absence\Controllers\AbsenceController;
 use Roostar\Core\Notifications\NotificationController;
 use Roostar\Modules\Audit\Controllers\AuditLogController;
@@ -12,7 +13,7 @@ use Roostar\Modules\Auth\Controllers\LoginController;
 use Roostar\Modules\Auth\Controllers\LogoutController;
 use Roostar\Modules\Auth\Controllers\PasswordChangeController;
 use Roostar\Modules\Auth\Controllers\ProfileController;
-use Roostar\Modules\Dashboard\DashboardController;
+use Roostar\Modules\Auth\Services\AuthSession;
 use Roostar\Modules\Dashboard\ModulePlaceholderController;
 use Roostar\Modules\Platform\Controllers\PlatformAdminController;
 use Roostar\Modules\RosterData\Controllers\RosterDataController;
@@ -24,7 +25,6 @@ use Roostar\Modules\TestPlanning\Controllers\TestPlanningController;
 use Roostar\Modules\Users\Controllers\UserManagementController;
 
 return static function (Router $router): void {
-    $dashboard = new DashboardController();
     $notifications = new NotificationController();
     $absence = new AbsenceController();
     $audit = new AuditLogController();
@@ -50,7 +50,23 @@ return static function (Router $router): void {
     $router->get('/profiel', [$profile, 'show'], $authRequired);
     $router->post('/notifications/read', [$notifications, 'markRead'], $authRequired);
 
-    $router->get('/', $dashboard, $authRequired);
+    $router->get('/', static function (): Response {
+        $user = AuthSession::userContext();
+
+        if ($user?->hasPermission(PermissionRegistry::PLATFORM_MANAGE)) {
+            return Response::redirect('/roostar-admin');
+        }
+
+        if ($user?->hasPermission(PermissionRegistry::ROSTER_VIEW)) {
+            return Response::redirect('/rooster');
+        }
+
+        if ($user?->hasPermission(PermissionRegistry::SCHOOL_MANAGE)) {
+            return Response::redirect('/stamdata');
+        }
+
+        return Response::redirect('/profiel');
+    }, $authRequired);
     $router->get('/rooster', [$rosters, 'index'], $authRequired);
     $router->get('/roosters/genereren', [$rosters, 'generate'], $rosterGenerateRequired);
     $router->post('/roosters/genereren', [$rosters, 'generate'], $rosterGenerateRequired);
@@ -106,6 +122,8 @@ return static function (Router $router): void {
     $router->post('/toetsweken/surveillance/voorstel', [$testPlanning, 'proposeSurveillance'], $authRequired);
     $router->get('/roostar-admin', [$platformAdmin, 'index'], $authRequired);
     $router->post('/roostar-admin/klanten', [$platformAdmin, 'storeCustomer'], $authRequired);
+    $router->post('/roostar-admin/klanten/archiveer', [$platformAdmin, 'archiveCustomer'], $authRequired);
+    $router->post('/roostar-admin/klanten/heractiveer', [$platformAdmin, 'restoreCustomer'], $authRequired);
     $router->post('/roostar-admin/school-admins', [$platformAdmin, 'storeSchoolAdmin'], $authRequired);
 
     foreach ([

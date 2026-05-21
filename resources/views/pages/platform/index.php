@@ -82,6 +82,7 @@ $groups = $groups ?? [];
             <th>Scholengroep</th>
             <th>Gebruikers</th>
             <th>Admins</th>
+            <th>Status</th>
             <th>Aangemaakt</th>
             <th>Acties</th>
           </tr>
@@ -93,14 +94,36 @@ $groups = $groups ?? [];
               <td class="muted"><?= htmlspecialchars((string) $customer['groep_naam']) ?></td>
               <td class="muted"><?= (int) ($customer['gebruikers_count'] ?? 0) ?></td>
               <td><?= (int) ($customer['admins_count'] ?? 0) > 0 ? '<span class="status st-done">Aanwezig</span>' : '<span class="status st-warn">Geen admin</span>' ?></td>
+              <td>
+                <?php if ((int) ($customer['active'] ?? 1) === 1): ?>
+                  <span class="status st-done">Actief</span>
+                <?php else: ?>
+                  <span class="status st-muted">Gearchiveerd</span>
+                <?php endif; ?>
+              </td>
               <td class="muted"><?= htmlspecialchars(date('d-m-Y', strtotime((string) $customer['created_at']))) ?></td>
               <td class="actions-cell">
-                <button class="btn btn-outline btn-sm" type="button" data-open-modal="school-admin-<?= htmlspecialchars((string) $customer['id']) ?>">Admin toevoegen</button>
+                <div class="table-actions">
+                  <?php if ((int) ($customer['active'] ?? 1) === 1): ?>
+                    <button class="btn btn-outline btn-sm" type="button" data-open-modal="school-admin-<?= htmlspecialchars((string) $customer['id']) ?>">Admin toevoegen</button>
+                    <form method="post" action="/roostar-admin/klanten/archiveer">
+                      <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                      <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $customer['id']) ?>">
+                      <button class="btn btn-ghost btn-sm btn-danger-link" type="submit">Archiveren</button>
+                    </form>
+                  <?php else: ?>
+                    <form method="post" action="/roostar-admin/klanten/heractiveer">
+                      <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                      <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $customer['id']) ?>">
+                      <button class="btn btn-outline btn-sm" type="submit">Heractiveer</button>
+                    </form>
+                  <?php endif; ?>
+                </div>
               </td>
             </tr>
           <?php endforeach; ?>
           <?php if ($customers === []): ?>
-            <tr><td colspan="6" class="muted">Nog geen klanten aangemaakt.</td></tr>
+            <tr><td colspan="7" class="muted">Nog geen klanten aangemaakt.</td></tr>
           <?php endif; ?>
         </tbody>
       </table>

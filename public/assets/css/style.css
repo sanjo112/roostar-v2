@@ -1017,6 +1017,8 @@ table.data-table td strong { font-weight: 500; color: var(--ink); }
 .st-block::before { background: var(--coral); }
 .st-warn { background: var(--yellow-soft); color: #8a6a14; }
 .st-warn::before { background: var(--yellow); }
+.st-muted { background: #EEF2F7; color: var(--ink-2); }
+.st-muted::before { background: #94A3B8; }
 
 .inline-pill-list {
   display: flex;

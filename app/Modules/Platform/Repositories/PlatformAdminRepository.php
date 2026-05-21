@@ -28,6 +28,8 @@ final class PlatformAdminRepository
                 s.id,
                 s.scholengroep_id,
                 s.naam_encrypted AS school_naam_encrypted,
+                s.active,
+                s.archived_at,
                 s.created_at,
                 sg.naam_encrypted AS groep_naam_encrypted,
                 COUNT(DISTINCT u.id) AS gebruikers_count,
@@ -36,7 +38,7 @@ final class PlatformAdminRepository
             INNER JOIN scholengroepen sg ON sg.id = s.scholengroep_id
             LEFT JOIN users u ON u.school_id = s.id
             GROUP BY s.id
-            ORDER BY s.created_at DESC
+            ORDER BY s.active DESC, s.created_at DESC
         ");
 
         return array_map(fn (array $row): array => [
@@ -130,6 +132,38 @@ final class PlatformAdminRepository
         return $userId;
     }
 
+    public function archiveCustomer(string $schoolId): void
+    {
+        if (!$this->schoolExists($schoolId)) {
+            throw new \InvalidArgumentException('School niet gevonden.');
+        }
+
+        $stmt = $this->db->prepare("
+            UPDATE scholen
+            SET active = 0,
+                archived_at = NOW(),
+                updated_at = NOW()
+            WHERE id = :id
+        ");
+        $stmt->execute(['id' => $schoolId]);
+    }
+
+    public function restoreCustomer(string $schoolId): void
+    {
+        if (!$this->schoolExists($schoolId, false)) {
+            throw new \InvalidArgumentException('School niet gevonden.');
+        }
+
+        $stmt = $this->db->prepare("
+            UPDATE scholen
+            SET active = 1,
+                archived_at = NULL,
+                updated_at = NOW()
+            WHERE id = :id
+        ");
+        $stmt->execute(['id' => $schoolId]);
+    }
+
     private function ensureSchoolAdmin(string $userId, string $schoolId, string $name): void
     {
         $stmt = $this->db->prepare("
@@ -162,9 +196,14 @@ final class PlatformAdminRepository
         }
     }
 
-    private function schoolExists(string $schoolId): bool
+    private function schoolExists(string $schoolId, bool $activeOnly = true): bool
     {
-        $stmt = $this->db->prepare("SELECT 1 FROM scholen WHERE id = :id LIMIT 1");
+        $sql = "SELECT 1 FROM scholen WHERE id = :id";
+        if ($activeOnly) {
+            $sql .= " AND active = 1";
+        }
+
+        $stmt = $this->db->prepare($sql . " LIMIT 1");
         $stmt->execute(['id' => $schoolId]);
 
         return (bool) $stmt->fetchColumn();
