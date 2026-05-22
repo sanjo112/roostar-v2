@@ -57,6 +57,10 @@ final class RosterGenerationRepository
 
         $constraints = $this->constraintsForSchoolYear($user, (string) $period['schooljaar_id'], (string) $period['id']);
         $constraints['period'] = $period;
+        $constraints['calendar'] = [
+            'breaks' => $this->breaksForPeriod($period),
+            'testWeeks' => $this->testWeeksForPeriod($period),
+        ];
 
         return $constraints;
     }
@@ -347,7 +351,15 @@ final class RosterGenerationRepository
                 k.*,
                 s.naam_encrypted AS school_naam_encrypted,
                 o.naam_encrypted AS opleiding_naam_encrypted,
-                o.code AS opleiding_code
+                o.code AS opleiding_code,
+                (
+                    SELECT COUNT(*)
+                    FROM leerling_profielen lp
+                    INNER JOIN users lu ON lu.id = lp.user_id
+                    WHERE lp.klas_id = k.id
+                      AND lu.role = 'leerling'
+                      AND lu.active = 1
+                ) AS leerling_count
             FROM klassen k
             INNER JOIN scholen s ON s.id = k.school_id
             LEFT JOIN opleidingen o ON o.id = k.opleiding_id
@@ -419,8 +431,14 @@ final class RosterGenerationRepository
             return [];
         }
 
-        $stmt = $this->db->prepare("
-            SELECT v.id, v.naam_encrypted, v.code, COALESCE(oph.uren_per_week, ov.uren_per_week) AS uren_per_week
+        $mandatory = $this->db->prepare("
+            SELECT
+                v.id,
+                v.naam_encrypted,
+                v.code,
+                COALESCE(oph.uren_per_week, ov.uren_per_week) AS uren_per_week,
+                0 AS keuzevak,
+                :student_count AS leerling_count
             FROM opleiding_vakken ov
             INNER JOIN vakken v ON v.id = ov.vak_id
             LEFT JOIN opleiding_vak_periode_uren oph
@@ -433,26 +451,64 @@ final class RosterGenerationRepository
               AND v.active = 1
             ORDER BY v.code IS NULL, v.code, v.created_at
         ");
-        $stmt->execute([
+        $studentCount = (int) ($class['leerling_count'] ?? 0);
+        $fallbackStudentCount = 24 + ((int) ($class['leerjaar'] ?? 1) * 2);
+        $mandatory->execute([
+            'opleiding_id' => $class['opleiding_id'],
+            'school_id' => $class['school_id'],
+            'periode_id' => $periodId,
+            'student_count' => $studentCount > 0 ? $studentCount : $fallbackStudentCount,
+        ]);
+
+        $electives = $this->db->prepare("
+            SELECT
+                v.id,
+                v.naam_encrypted,
+                v.code,
+                COALESCE(oph.uren_per_week, ov.uren_per_week) AS uren_per_week,
+                1 AS keuzevak,
+                COUNT(DISTINCT lkv.user_id) AS leerling_count
+            FROM opleiding_vakken ov
+            INNER JOIN vakken v ON v.id = ov.vak_id
+            LEFT JOIN opleiding_vak_periode_uren oph
+              ON oph.opleiding_id = ov.opleiding_id
+             AND oph.vak_id = ov.vak_id
+             AND oph.periode_id = :periode_id
+            INNER JOIN leerling_profielen lp ON lp.klas_id = :klas_id
+            INNER JOIN users u ON u.id = lp.user_id AND u.role = 'leerling' AND u.active = 1
+            INNER JOIN leerling_keuzevakken lkv ON lkv.user_id = lp.user_id AND lkv.vak_id = ov.vak_id
+            WHERE ov.opleiding_id = :opleiding_id
+              AND ov.keuzevak = 1
+              AND v.school_id = :school_id
+              AND v.active = 1
+            GROUP BY v.id, v.naam_encrypted, v.code, ov.uren_per_week, oph.uren_per_week
+            HAVING leerling_count > 0
+            ORDER BY v.code IS NULL, v.code, v.created_at
+        ");
+        $electives->execute([
+            'klas_id' => $class['id'],
             'opleiding_id' => $class['opleiding_id'],
             'school_id' => $class['school_id'],
             'periode_id' => $periodId,
         ]);
+
+        $rows = array_merge($mandatory->fetchAll(), $electives->fetchAll());
 
         return array_map(function (array $row) use ($class): array {
             return [
                 'id' => (string) $class['id'] . ':' . (string) $row['id'],
                 'classId' => (string) $class['id'],
                 'className' => (string) $class['naam'],
+                'type' => !empty($row['keuzevak']) ? 'elective' : 'mandatory',
                 'subject' => [
                     'id' => (string) $row['id'],
                     'name' => $this->decrypt((string) $row['naam_encrypted']),
                     'code' => $row['code'] ?: $this->decrypt((string) $row['naam_encrypted']),
                 ],
                 'hoursPerWeek' => max(0, (int) ($row['uren_per_week'] ?? 0)),
-                'studentCount' => 24 + ((int) ($class['leerjaar'] ?? 1) * 2),
+                'studentCount' => max(1, (int) ($row['leerling_count'] ?? 0)),
             ];
-        }, $stmt->fetchAll());
+        }, $rows);
     }
 
     private function teachersForSchool(string $schoolId): array
@@ -492,6 +548,84 @@ final class RosterGenerationRepository
                 'maxHoursPerWeek' => (int) ($row['max_uren_per_week'] ?? 24),
             ];
         }, $stmt->fetchAll());
+    }
+
+    private function breaksForPeriod(array $period): array
+    {
+        [$startDate, $endDate] = $this->periodDateRange($period);
+
+        try {
+            $stmt = $this->db->prepare("
+                SELECT naam, type, startdatum, einddatum
+                FROM schooljaar_vrije_dagen
+                WHERE schooljaar_id = :schooljaar_id
+                  AND active = 1
+                  AND startdatum <= :end_date
+                  AND einddatum >= :start_date
+                ORDER BY startdatum
+            ");
+            $stmt->execute([
+                'schooljaar_id' => $period['schooljaar_id'],
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+            ]);
+
+            return $stmt->fetchAll();
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    private function testWeeksForPeriod(array $period): array
+    {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT naam, week_nummer, les_percentage, verkort_rooster, lesuren_per_dag
+                FROM toetsweken
+                WHERE school_id = :school_id
+                  AND schooljaar_id = :schooljaar_id
+                  AND (periode_id = :periode_id OR periode_id IS NULL)
+                  AND active = 1
+                ORDER BY week_nummer
+            ");
+            $stmt->execute([
+                'school_id' => $period['school_id'],
+                'schooljaar_id' => $period['schooljaar_id'],
+                'periode_id' => $period['id'],
+            ]);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $weekFrom = (int) ($period['week_van'] ?? 1);
+        $weekTo = (int) ($period['week_tot'] ?? 53);
+
+        return array_values(array_filter($stmt->fetchAll(), static function (array $testWeek) use ($weekFrom, $weekTo): bool {
+            $week = (int) ($testWeek['week_nummer'] ?? 0);
+
+            return $weekFrom <= $weekTo
+                ? $week >= $weekFrom && $week <= $weekTo
+                : $week >= $weekFrom || $week <= $weekTo;
+        }));
+    }
+
+    private function periodDateRange(array $period): array
+    {
+        $fromYear = (int) ($period['week_van_jaar'] ?? 0);
+        $toYear = (int) ($period['week_tot_jaar'] ?? 0);
+
+        if ($fromYear <= 0 || $toYear <= 0) {
+            $schoolYear = $this->schoolYear((string) $period['schooljaar_id']);
+            $startYear = $schoolYear ? (int) date('o', strtotime((string) $schoolYear['startdatum'])) : (int) date('o');
+            $endYear = $schoolYear ? (int) date('o', strtotime((string) $schoolYear['einddatum'])) : $startYear + 1;
+            $fromYear = $fromYear > 0 ? $fromYear : $startYear;
+            $toYear = $toYear > 0 ? $toYear : ((int) $period['week_tot'] < (int) $period['week_van'] ? $endYear : $startYear);
+        }
+
+        $start = (new \DateTimeImmutable())->setISODate($fromYear, (int) $period['week_van'], 1);
+        $end = (new \DateTimeImmutable())->setISODate($toYear, (int) $period['week_tot'], 7);
+
+        return [$start->format('Y-m-d'), $end->format('Y-m-d')];
     }
 
     private function roomsForSchool(string $schoolId): array

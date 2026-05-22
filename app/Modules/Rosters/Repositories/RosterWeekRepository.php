@@ -64,6 +64,9 @@ final class RosterWeekRepository
         }
 
         $lessons = $this->lessonsForPeriod((string) $period['id'], $week);
+        $breaksByDate = $this->breaksForWeek((string) $period['schooljaar_id'], $dates);
+        $testWeek = $this->testWeekForWeek((string) $period['school_id'], (string) $period['schooljaar_id'], $week);
+        $testWeekNoticeAdded = false;
         $absences = $this->absencesForWeek((string) $period['school_id'], $dates);
         $replacements = $this->replacementsForWeek($dates);
         $views = ['class' => [], 'teacher' => [], 'room' => []];
@@ -71,6 +74,20 @@ final class RosterWeekRepository
 
         foreach ($lessons as $index => $lesson) {
             $date = $dates[(string) $lesson['dag']] ?? null;
+
+            if ($date !== null && isset($breaksByDate[$date])) {
+                $issues[] = $breaksByDate[$date]['naam'] . ': geen lessen op ' . (string) $lesson['dag'] . ' ' . date('d-m-Y', strtotime($date));
+                continue;
+            }
+
+            if ($testWeek !== null && $this->lessonSuppressedByTestWeek($lesson, $testWeek)) {
+                if (!$testWeekNoticeAdded) {
+                    $issues[] = (string) $testWeek['naam'] . ': rooster beperkt tot ' . (int) $testWeek['les_percentage'] . '% regulier lesrooster.';
+                    $testWeekNoticeAdded = true;
+                }
+                continue;
+            }
+
             $absence = $date ? $this->absenceForLesson($absences, (string) $lesson['leraar_id'], $date) : null;
             $replacement = $date ? ($replacements[$lesson['id'] . '|' . $date] ?? null) : null;
             $isCancelled = $replacement !== null && (string) ($replacement['oplossing'] ?? '') === 'uitgeroosterd';
@@ -330,6 +347,84 @@ final class RosterWeekRepository
         }
 
         return $items;
+    }
+
+    private function breaksForWeek(string $schoolYearId, array $dates): array
+    {
+        if ($dates === []) {
+            return [];
+        }
+
+        try {
+            $stmt = $this->db->prepare("
+                SELECT naam, type, startdatum, einddatum
+                FROM schooljaar_vrije_dagen
+                WHERE schooljaar_id = :schooljaar_id
+                  AND active = 1
+                  AND startdatum <= :week_end
+                  AND einddatum >= :week_start
+                ORDER BY startdatum
+            ");
+            $stmt->execute([
+                'schooljaar_id' => $schoolYearId,
+                'week_start' => min($dates),
+                'week_end' => max($dates),
+            ]);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $items = [];
+        foreach ($stmt->fetchAll() as $break) {
+            foreach ($dates as $date) {
+                if ((string) $break['startdatum'] <= $date && (string) $break['einddatum'] >= $date) {
+                    $items[$date] = $break;
+                }
+            }
+        }
+
+        return $items;
+    }
+
+    private function testWeekForWeek(string $schoolId, string $schoolYearId, int $week): ?array
+    {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT *
+                FROM toetsweken
+                WHERE school_id = :school_id
+                  AND schooljaar_id = :schooljaar_id
+                  AND week_nummer = :week_nummer
+                  AND active = 1
+                LIMIT 1
+            ");
+            $stmt->execute([
+                'school_id' => $schoolId,
+                'schooljaar_id' => $schoolYearId,
+                'week_nummer' => $week,
+            ]);
+            $row = $stmt->fetch();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return is_array($row) ? $row : null;
+    }
+
+    private function lessonSuppressedByTestWeek(array $lesson, array $testWeek): bool
+    {
+        if ((int) ($testWeek['verkort_rooster'] ?? 0) === 1 && !empty($testWeek['lesuren_per_dag'])) {
+            return (int) $lesson['lesuur'] > (int) $testWeek['lesuren_per_dag'];
+        }
+
+        $percentage = max(0, min(100, (int) ($testWeek['les_percentage'] ?? 100)));
+        if ($percentage >= 100) {
+            return false;
+        }
+
+        $allowedLessons = (int) floor(9 * ($percentage / 100));
+
+        return (int) $lesson['lesuur'] > max(0, $allowedLessons);
     }
 
     private function absenceForLesson(array $absences, string $teacherId, string $date): ?array

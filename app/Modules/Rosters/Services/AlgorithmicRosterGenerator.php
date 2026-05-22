@@ -71,6 +71,14 @@ final class AlgorithmicRosterGenerator
             }
         }
 
+        if (!empty($constraints['calendar']['breaks'])) {
+            $issues[] = count($constraints['calendar']['breaks']) . ' vrije dagen/vakanties worden per week toegepast in het weekrooster.';
+        }
+
+        if (!empty($constraints['calendar']['testWeeks'])) {
+            $issues[] = count($constraints['calendar']['testWeeks']) . ' toetsweek(en) beperken het weekrooster in de betreffende week.';
+        }
+
         return [
             'success' => true,
             'lessons' => $lessons,
