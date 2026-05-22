@@ -47,7 +47,16 @@ final class AlgorithmicRosterGenerator
                 );
 
                 if ($placement === null) {
-                    $issues[] = 'Niet geplaatst: ' . (string) $group['subject']['code'] . ' voor ' . (string) $group['className'];
+                    $issues[] = $this->unplacedIssue(
+                        $group,
+                        $constraints,
+                        $slots,
+                        $teacherSlot,
+                        $roomSlot,
+                        $classSlot,
+                        $teacherDayHours,
+                        $teacherWeekHours,
+                    );
                     continue;
                 }
 
@@ -144,6 +153,115 @@ final class AlgorithmicRosterGenerator
         }
 
         return $best;
+    }
+
+    private function unplacedIssue(
+        array $group,
+        array $constraints,
+        array $slots,
+        array $teacherSlot,
+        array $roomSlot,
+        array $classSlot,
+        array $teacherDayHours,
+        array $teacherWeekHours,
+    ): string {
+        $subjectCode = (string) $group['subject']['code'];
+        $className = (string) $group['className'];
+        $prefix = 'Niet geplaatst: ' . $subjectCode . ' voor ' . $className . '. ';
+        $teachers = $this->qualifiedTeachers($group, $constraints);
+        $rooms = $this->suitableRooms($group, $constraints);
+
+        if ($teachers === [] && $rooms === []) {
+            return $prefix . 'Geen bevoegde leraar en geen geschikt lokaal beschikbaar.';
+        }
+
+        if ($teachers === []) {
+            return $prefix . 'Geen bevoegde leraar beschikbaar.';
+        }
+
+        if ($rooms === []) {
+            return $prefix . $this->roomShortageReason($group, $constraints);
+        }
+
+        $blocked = [
+            'class' => 0,
+            'teacherBooked' => 0,
+            'teacherUnavailable' => 0,
+            'teacherWeekMax' => 0,
+            'teacherDayMax' => 0,
+            'roomBooked' => 0,
+            'roomUnavailable' => 0,
+        ];
+
+        foreach ($slots as $slot) {
+            $slotKey = $this->slotKey($slot);
+
+            if (isset($classSlot[$group['classId'] . '_' . $slotKey])) {
+                $blocked['class']++;
+                continue;
+            }
+
+            foreach ($teachers as $teacher) {
+                if (isset($teacherSlot[$teacher['id'] . '_' . $slotKey])) {
+                    $blocked['teacherBooked']++;
+                    continue;
+                }
+                if (!$this->teacherAvailableForSlot($teacher, $slot)) {
+                    $blocked['teacherUnavailable']++;
+                    continue;
+                }
+                if (($teacherWeekHours[$teacher['id']] ?? 0) >= (int) ($teacher['maxHoursPerWeek'] ?? 24)) {
+                    $blocked['teacherWeekMax']++;
+                    continue;
+                }
+                if (($teacherDayHours[$teacher['id']][$slot['day']] ?? 0) >= (int) ($teacher['maxHoursPerDay'] ?? 6)) {
+                    $blocked['teacherDayMax']++;
+                    continue;
+                }
+
+                foreach ($rooms as $room) {
+                    if (isset($roomSlot[$room['id'] . '_' . $slotKey])) {
+                        $blocked['roomBooked']++;
+                        continue;
+                    }
+                    if (!$this->roomAvailableForSlot($room, $slot)) {
+                        $blocked['roomUnavailable']++;
+                    }
+                }
+            }
+        }
+
+        arsort($blocked);
+        $reason = (string) array_key_first($blocked);
+
+        return $prefix . match ($reason) {
+            'class' => 'Klas heeft op de resterende mogelijke momenten al les.',
+            'teacherBooked' => 'Bevoegde leraar is op de mogelijke momenten al ingeroosterd.',
+            'teacherUnavailable' => 'Bevoegde leraar is niet beschikbaar op de mogelijke momenten.',
+            'teacherWeekMax' => 'Bevoegde leraar zit aan het maximum aantal uren per week.',
+            'teacherDayMax' => 'Bevoegde leraar zit aan het maximum aantal uren per dag.',
+            'roomBooked' => 'Geschikt lokaal is op de mogelijke momenten al bezet.',
+            'roomUnavailable' => 'Geschikt extern lokaal is niet inzetbaar op de mogelijke momenten.',
+            default => 'Geen passende combinatie van leraar, lokaal en uur gevonden.',
+        };
+    }
+
+    private function roomShortageReason(array $group, array $constraints): string
+    {
+        $subjectId = (string) $group['subject']['id'];
+        $studentCount = (int) ($group['studentCount'] ?? 0);
+        $subjectRooms = array_values(array_filter(
+            $constraints['rooms'] ?? [],
+            static fn (array $room): bool => in_array($subjectId, $room['subjectIds'] ?? [], true),
+        ));
+
+        if ($subjectRooms === []) {
+            return 'Geen lokaal gekoppeld aan dit vak.';
+        }
+
+        $largestCapacity = max(array_map(static fn (array $room): int => (int) ($room['capacity'] ?? 0), $subjectRooms));
+
+        return 'Lokaalcapaciteit te klein: nodig ' . $studentCount . ', grootste geschikte lokaal ' . $largestCapacity . '.';
     }
 
     private function qualifiedTeachers(array $group, array $constraints): array

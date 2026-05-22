@@ -23,6 +23,12 @@ use Roostar\Modules\Users\Repositories\UserDirectoryRepository;
 
 final class UserManagementController
 {
+    private const TABS = [
+        'gebruikers' => 'Gebruikers',
+        'leraren' => 'Leraren',
+        'leerlingen' => 'Leerlingen',
+    ];
+
     public function index(Request $request): Response
     {
         $user = AuthSession::userContext();
@@ -41,8 +47,21 @@ final class UserManagementController
         $schools = new SchoolRepository($db, $encryptor);
         $schoolFilter = $request->string('school_id') ?: null;
         $roleOptions = $this->roleOptionsFor($user->role);
-        $roleFilter = $this->validRoleFilter($request->string('role'), $roleOptions);
+        $activeTab = array_key_exists($request->string('tab'), self::TABS) ? $request->string('tab') : 'gebruikers';
+        $generalRoleOptions = array_diff_key($roleOptions, ['leraar' => true, 'leerling' => true]);
+        $roleFilter = $this->validRoleFilter($request->string('role'), $generalRoleOptions);
         $statusFilter = $this->validStatusFilter($request->string('status'));
+        $effectiveRoleFilter = $roleFilter;
+        $excludedRoles = [];
+
+        if ($activeTab === 'leraren') {
+            $effectiveRoleFilter = 'leraar';
+        } elseif ($activeTab === 'leerlingen') {
+            $effectiveRoleFilter = 'leerling';
+        } elseif ($effectiveRoleFilter === null) {
+            $excludedRoles = ['leraar', 'leerling'];
+        }
+
         $temporaryPassword = $_SESSION['user_temporary_password'] ?? '';
         $temporaryPasswordUser = $_SESSION['user_temporary_password_user'] ?? [];
 
@@ -54,13 +73,16 @@ final class UserManagementController
         return Response::html(AppView::render('users/index', [
             'activePage' => 'gebruikers',
             'pageTitle' => 'Gebruikers',
-            'users' => $users->listFor($user, $schoolFilter, $roleFilter, $statusFilter),
+            'users' => $users->listFor($user, $schoolFilter, $effectiveRoleFilter, $statusFilter, $excludedRoles),
             'roleCounts' => $users->countsByRole($user),
+            'tabs' => self::TABS,
+            'activeTab' => $activeTab,
             'schools' => $schools->accessibleFor($user),
             'schoolFilter' => $schoolFilter,
             'roleFilter' => $roleFilter,
             'statusFilter' => $statusFilter,
             'roleOptions' => $roleOptions,
+            'filterRoleOptions' => $generalRoleOptions,
             'csrfToken' => Csrf::token(),
             'temporaryPassword' => $temporaryPassword,
             'temporaryPasswordUser' => is_array($temporaryPasswordUser) ? $temporaryPasswordUser : [],
@@ -88,7 +110,7 @@ final class UserManagementController
 
         if (!Csrf::verify($request->string('_token'))) {
             NotificationBag::error('Je sessie is verlopen. Probeer opnieuw.');
-            return Response::redirect('/gebruikers');
+            return $this->redirectToUsers($request);
         }
 
         $role = $request->string('role');
@@ -99,12 +121,12 @@ final class UserManagementController
 
         if ($name === '' || $email === '' || $password === '' || $role === '' || $schoolId === '') {
             NotificationBag::warning('Vul alle verplichte velden in.');
-            return Response::redirect('/gebruikers');
+            return $this->redirectToUsers($request);
         }
 
         if (strlen($password) < 8) {
             NotificationBag::warning('Het wachtwoord moet minimaal 8 tekens zijn.');
-            return Response::redirect('/gebruikers');
+            return $this->redirectToUsers($request);
         }
 
         if (!$this->canAssignRole($user->role, $role)) {
@@ -113,7 +135,7 @@ final class UserManagementController
                 'target_role' => $role,
                 'school_id' => $schoolId,
             ]);
-            return Response::redirect('/gebruikers');
+            return $this->redirectToUsers($request);
         }
 
         if (!$user->hasPermission(PermissionRegistry::USERS_MANAGE, 'school', $schoolId)) {
@@ -122,7 +144,7 @@ final class UserManagementController
                 'target_role' => $role,
                 'school_id' => $schoolId,
             ]);
-            return Response::redirect('/gebruikers');
+            return $this->redirectToUsers($request);
         }
 
         $db = Connection::get();
@@ -134,7 +156,7 @@ final class UserManagementController
                 'target_role' => $role,
                 'school_id' => $schoolId,
             ]);
-            return Response::redirect('/gebruikers');
+            return $this->redirectToUsers($request);
         }
 
         $userId = $creator->create([
@@ -160,7 +182,7 @@ final class UserManagementController
         unset($_SESSION['user_create_error']);
         NotificationBag::success('Gebruiker is aangemaakt.');
 
-        return Response::redirect('/gebruikers');
+        return $this->redirectToUsers($request);
     }
 
     public function deactivate(Request $request): Response
@@ -174,12 +196,12 @@ final class UserManagementController
 
             if ($target['id'] === $actor->id) {
                 NotificationBag::error('Je kunt je eigen account niet deactiveren.');
-                return Response::redirect('/gebruikers');
+                return $this->redirectToUsers($request);
             }
 
             if (!$target['active']) {
                 NotificationBag::warning('Deze gebruiker is al inactief.');
-                return Response::redirect('/gebruikers');
+                return $this->redirectToUsers($request);
             }
 
             $users->deactivate((string) $target['id']);
@@ -190,7 +212,7 @@ final class UserManagementController
 
             NotificationBag::success('Gebruiker is gedeactiveerd.');
 
-            return Response::redirect('/gebruikers');
+            return $this->redirectToUsers($request);
         });
     }
 
@@ -206,7 +228,7 @@ final class UserManagementController
 
             if (!$target['active']) {
                 NotificationBag::error('Je kunt geen wachtwoord resetten voor een inactieve gebruiker.');
-                return Response::redirect('/gebruikers');
+                return $this->redirectToUsers($request);
             }
 
             $db = Connection::get();
@@ -223,7 +245,7 @@ final class UserManagementController
                 'email' => (string) $target['email'],
             ];
 
-            return Response::redirect('/gebruikers');
+            return $this->redirectToUsers($request);
         });
     }
 
@@ -238,7 +260,7 @@ final class UserManagementController
 
             if ($target['active']) {
                 NotificationBag::warning('Deze gebruiker is al actief.');
-                return Response::redirect('/gebruikers');
+                return $this->redirectToUsers($request);
             }
 
             $users->reactivate((string) $target['id']);
@@ -249,7 +271,7 @@ final class UserManagementController
 
             NotificationBag::success('Gebruiker is heractiveerd.');
 
-            return Response::redirect('/gebruikers');
+            return $this->redirectToUsers($request);
         });
     }
 
@@ -261,6 +283,14 @@ final class UserManagementController
             'moduleTitle' => 'Geen toegang',
             'moduleDescription' => 'Je hebt geen recht om gebruikers te beheren.',
         ]), 403);
+    }
+
+    private function redirectToUsers(Request $request): Response
+    {
+        $tab = $request->string('tab');
+        $query = array_key_exists($tab, self::TABS) ? '?tab=' . rawurlencode($tab) : '';
+
+        return Response::redirect('/gebruikers' . $query);
     }
 
     private function manageExistingUser(Request $request, string $action, callable $callback): Response
@@ -277,14 +307,14 @@ final class UserManagementController
 
         if (!Csrf::verify($request->string('_token'))) {
             NotificationBag::error('Je sessie is verlopen. Probeer opnieuw.');
-            return Response::redirect('/gebruikers');
+            return $this->redirectToUsers($request);
         }
 
         $targetUserId = $request->string('user_id');
 
         if ($targetUserId === '') {
             NotificationBag::warning('Kies eerst een gebruiker.');
-            return Response::redirect('/gebruikers');
+            return $this->redirectToUsers($request);
         }
 
         $db = Connection::get();
@@ -297,7 +327,7 @@ final class UserManagementController
                 'target_user_id' => $targetUserId,
             ], $request);
             NotificationBag::error('Je mag deze gebruiker niet beheren.');
-            return Response::redirect('/gebruikers');
+            return $this->redirectToUsers($request);
         }
 
         if (!$target['school_id'] || !$user->hasPermission(PermissionRegistry::USERS_MANAGE, 'school', (string) $target['school_id'])) {
@@ -306,7 +336,7 @@ final class UserManagementController
                 'school_id' => $target['school_id'],
             ], $request);
             NotificationBag::error('Je mag deze gebruiker niet beheren.');
-            return Response::redirect('/gebruikers');
+            return $this->redirectToUsers($request);
         }
 
         return $callback($target, $users);

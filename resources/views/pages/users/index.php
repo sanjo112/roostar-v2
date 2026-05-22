@@ -1,3 +1,15 @@
+<?php
+  $tabs = $tabs ?? ['gebruikers' => 'Gebruikers', 'leraren' => 'Leraren', 'leerlingen' => 'Leerlingen'];
+  $activeTab = $activeTab ?? 'gebruikers';
+  $tabDescriptions = [
+    'gebruikers' => 'Beheer admins, afdelingsleiders en roostermedewerkers.',
+    'leraren' => 'Beheer leraaraccounts vanuit gebruikersbeheer.',
+    'leerlingen' => 'Beheer leerlingaccounts vanuit gebruikersbeheer.',
+  ];
+  $createDefaultRole = $activeTab === 'leraren' ? 'leraar' : ($activeTab === 'leerlingen' ? 'leerling' : '');
+  $createButtonLabel = $activeTab === 'leraren' ? 'Nieuwe leraar' : ($activeTab === 'leerlingen' ? 'Nieuwe leerling' : 'Nieuwe gebruiker');
+?>
+
 <section class="card overview-card">
   <div class="overview-head">
     <div>
@@ -7,10 +19,17 @@
         Namen worden encrypted opgeslagen en alleen hier ontsleuteld voor weergave.
       </div>
     </div>
+    <nav class="settings-tabs segmented tabs-inline" aria-label="Gebruiker tabs">
+      <?php foreach ($tabs as $tabKey => $tabLabel): ?>
+        <a class="<?= $activeTab === $tabKey ? 'active' : '' ?>" href="/gebruikers?tab=<?= htmlspecialchars((string) $tabKey) ?>">
+          <?= htmlspecialchars((string) $tabLabel) ?>
+        </a>
+      <?php endforeach; ?>
+    </nav>
     <div class="view-actions">
       <button class="btn btn-dark" type="button" data-open-modal="user-create-modal">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-        Nieuwe gebruiker
+        <?= htmlspecialchars($createButtonLabel) ?>
       </button>
     </div>
   </div>
@@ -57,6 +76,7 @@
     </div>
     <form method="post" action="/gebruikers">
       <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+      <input type="hidden" name="tab" value="<?= htmlspecialchars((string) $activeTab) ?>">
       <div class="modal-body">
         <div class="app-modal-grid">
           <div class="form-group">
@@ -76,7 +96,7 @@
             <select class="form-select" name="role" required>
               <option value="">Kies een rol</option>
               <?php foreach (($roleOptions ?? []) as $roleValue => $roleLabel): ?>
-                <option value="<?= htmlspecialchars((string) $roleValue) ?>"><?= htmlspecialchars((string) $roleLabel) ?></option>
+                <option value="<?= htmlspecialchars((string) $roleValue) ?>" <?= $createDefaultRole === (string) $roleValue ? 'selected' : '' ?>><?= htmlspecialchars((string) $roleLabel) ?></option>
               <?php endforeach; ?>
             </select>
           </div>
@@ -104,11 +124,12 @@
 <section class="card tasks-card">
   <div class="tasks-head">
     <div>
-      <div class="eyebrow">Gebruikers</div>
-      <div class="muted text-sm">Alleen gebruikers binnen jouw school- of scholengroep-scope.</div>
+      <div class="eyebrow"><?= htmlspecialchars((string) ($tabs[$activeTab] ?? 'Gebruikers')) ?></div>
+      <div class="muted text-sm"><?= htmlspecialchars((string) ($tabDescriptions[$activeTab] ?? 'Alleen gebruikers binnen jouw school- of scholengroep-scope.')) ?></div>
     </div>
 
     <form class="user-filter-form" method="get" action="/gebruikers">
+      <input type="hidden" name="tab" value="<?= htmlspecialchars((string) $activeTab) ?>">
       <?php if (!empty($schools)): ?>
         <select class="form-select w-filter" name="school_id" onchange="this.form.submit()">
           <option value="">Alle scholen</option>
@@ -119,14 +140,16 @@
           <?php endforeach; ?>
         </select>
 
-        <select class="form-select w-filter" name="role" onchange="this.form.submit()">
-          <option value="">Alle rollen</option>
-          <?php foreach (($roleOptions ?? []) as $roleValue => $roleLabel): ?>
-            <option value="<?= htmlspecialchars((string) $roleValue) ?>" <?= ($roleFilter ?? '') === $roleValue ? 'selected' : '' ?>>
-              <?= htmlspecialchars((string) $roleLabel) ?>
-            </option>
-          <?php endforeach; ?>
-        </select>
+        <?php if ($activeTab === 'gebruikers'): ?>
+          <select class="form-select w-filter" name="role" onchange="this.form.submit()">
+            <option value="">Alle rollen</option>
+            <?php foreach (($filterRoleOptions ?? []) as $roleValue => $roleLabel): ?>
+              <option value="<?= htmlspecialchars((string) $roleValue) ?>" <?= ($roleFilter ?? '') === $roleValue ? 'selected' : '' ?>>
+                <?= htmlspecialchars((string) $roleLabel) ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        <?php endif; ?>
 
         <select class="form-select w-filter" name="status" onchange="this.form.submit()">
           <option value="">Alle statussen</option>
@@ -135,7 +158,7 @@
         </select>
 
         <?php if (!empty($schoolFilter) || !empty($roleFilter) || !empty($statusFilter)): ?>
-          <a class="btn btn-outline btn-sm" href="/gebruikers">Wis filters</a>
+          <a class="btn btn-outline btn-sm" href="/gebruikers?tab=<?= htmlspecialchars((string) $activeTab) ?>">Wis filters</a>
         <?php endif; ?>
       <?php endif; ?>
     </form>
@@ -188,12 +211,14 @@
                 <?php if ($userRow['active']): ?>
                   <form method="post" action="/gebruikers/deactiveer" onsubmit="return confirm('Weet je zeker dat je deze gebruiker wilt deactiveren?');">
                     <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                    <input type="hidden" name="tab" value="<?= htmlspecialchars((string) $activeTab) ?>">
                     <input type="hidden" name="user_id" value="<?= htmlspecialchars((string) $userRow['id']) ?>">
                     <button class="btn btn-danger btn-sm" type="submit" <?= !$isCurrentUser ? '' : 'disabled' ?>>Weghalen</button>
                   </form>
                 <?php else: ?>
                   <form method="post" action="/gebruikers/heractiveer">
                     <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                    <input type="hidden" name="tab" value="<?= htmlspecialchars((string) $activeTab) ?>">
                     <input type="hidden" name="user_id" value="<?= htmlspecialchars((string) $userRow['id']) ?>">
                     <button class="btn btn-outline btn-sm" type="submit">Heractiveren</button>
                   </form>
@@ -227,6 +252,7 @@
       </div>
       <form method="post" action="/gebruikers/reset-wachtwoord">
         <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+        <input type="hidden" name="tab" value="<?= htmlspecialchars((string) $activeTab) ?>">
         <input type="hidden" name="user_id" value="<?= htmlspecialchars((string) $userRow['id']) ?>">
         <div class="modal-body">
           <p class="muted password-modal-copy">

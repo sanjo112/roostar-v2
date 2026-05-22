@@ -16,7 +16,7 @@ final class UserDirectoryRepository
     ) {
     }
 
-    public function listFor(UserContext $user, ?string $schoolFilter = null, ?string $roleFilter = null, ?string $statusFilter = null): array
+    public function listFor(UserContext $user, ?string $schoolFilter = null, ?string $roleFilter = null, ?string $statusFilter = null, array $excludedRoles = []): array
     {
         [$scopeSql, $params] = $this->scopeFor($user);
 
@@ -28,6 +28,18 @@ final class UserDirectoryRepository
         if ($roleFilter) {
             $scopeSql .= " AND u.role = :role_filter";
             $params['role_filter'] = $roleFilter;
+        }
+
+        $excludedRoles = array_values(array_filter($excludedRoles, static fn (mixed $role): bool => is_string($role) && $role !== ''));
+        if ($excludedRoles !== []) {
+            $placeholders = [];
+            foreach ($excludedRoles as $index => $role) {
+                $key = 'excluded_role_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $role;
+            }
+
+            $scopeSql .= " AND u.role NOT IN (" . implode(', ', $placeholders) . ")";
         }
 
         if ($statusFilter === 'active') {
