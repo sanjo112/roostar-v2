@@ -191,6 +191,36 @@
               && Number(lesson.periodIndex) === Number(periodIndex)
               && Number(lesson.dayIndex) === Number(dayIndex)
             ));
+            const lessonLabel = (lesson) => [
+              lesson.subject?.code || lesson.subject?.naam || 'Les',
+              lesson.class?.naam || '',
+            ].filter(Boolean).join(' ');
+            const conflictReasons = (lesson, periodIndex, dayIndex) => {
+              const reasons = [];
+              lessonStore.forEach((candidate) => {
+                if (
+                  candidate.id === lesson.id
+                  || Number(candidate.periodIndex) !== Number(periodIndex)
+                  || Number(candidate.dayIndex) !== Number(dayIndex)
+                ) {
+                  return;
+                }
+
+                if (candidate.classId === lesson.classId) {
+                  reasons.push(`Klas bezet door ${lessonLabel(candidate)}`);
+                }
+
+                if (candidate.teacherId === lesson.teacherId) {
+                  reasons.push(`Leraar bezet door ${lessonLabel(candidate)}`);
+                }
+
+                if (candidate.roomId === lesson.roomId) {
+                  reasons.push(`Lokaal bezet door ${lessonLabel(candidate)}`);
+                }
+              });
+
+              return [...new Set(reasons)];
+            };
 
             const validateMove = (lesson, periodIndex, dayIndex) => {
               if (!lesson) return { state: 'blocked', reason: 'Geen les geselecteerd' };
@@ -198,33 +228,18 @@
                 return { state: 'current', reason: 'Huidige positie' };
               }
 
-              const conflicts = lessonStore.filter((candidate) => (
-                candidate.id !== lesson.id
-                && Number(candidate.periodIndex) === Number(periodIndex)
-                && Number(candidate.dayIndex) === Number(dayIndex)
-                && (
-                  candidate.classId === lesson.classId
-                  || candidate.teacherId === lesson.teacherId
-                  || candidate.roomId === lesson.roomId
-                )
-              ));
+              const reasons = conflictReasons(lesson, periodIndex, dayIndex);
 
-              if (conflicts.length > 0) {
-                const conflict = conflicts[0];
-                const reasons = [];
-                if (conflict.classId === lesson.classId) reasons.push('klas bezet');
-                if (conflict.teacherId === lesson.teacherId) reasons.push('leraar bezet');
-                if (conflict.roomId === lesson.roomId) reasons.push('lokaal bezet');
-                return { state: 'blocked', reason: reasons.join(', ') };
-              }
-
-              return { state: 'ok', reason: 'Past op dit uur' };
+              return reasons.length > 0
+                ? { state: 'blocked', reason: reasons.join(' · ') }
+                : { state: 'ok', reason: 'Past op dit uur' };
             };
 
             const clearDragState = () => {
               cells.forEach((cell) => {
                 cell.classList.remove('drag-target', 'drag-ok', 'drag-current', 'drag-warning', 'drag-blocked');
                 cell.removeAttribute('title');
+                delete cell.dataset.dropReason;
               });
             };
 
@@ -235,6 +250,7 @@
                 const validation = validateMove(lesson, periodIndex, dayIndex);
                 cell.classList.add('drag-target', `drag-${validation.state}`);
                 cell.title = validation.reason;
+                cell.dataset.dropReason = validation.reason;
               });
             };
 
@@ -344,6 +360,7 @@
                 const validation = validateMove(lesson, periodIndex, dayIndex);
 
                 if (!lesson || validation.state === 'blocked') {
+                  window.toast?.(validation.reason || 'Verplaatsen kan niet.', 'warning');
                   return;
                 }
 
