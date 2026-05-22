@@ -253,6 +253,25 @@ final class RosterDataRepository
         $this->syncTeacherSubjects($teacherId, $schoolId, $subjectIds);
     }
 
+    public function teacherIdByEmailForSchool(string $schoolId, string $email): ?string
+    {
+        $stmt = $this->db->prepare("
+            SELECT id
+            FROM users
+            WHERE school_id = :school_id
+              AND email = :email
+              AND role = 'leraar'
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'school_id' => $schoolId,
+            'email' => mb_strtolower(trim($email)),
+        ]);
+        $id = $stmt->fetchColumn();
+
+        return is_string($id) ? $id : null;
+    }
+
     public function updateTeacher(string $teacherId, string $schoolId, string $name, string $email, bool $active): void
     {
         if (!$this->teacherBelongsToSchool($teacherId, $schoolId)) {

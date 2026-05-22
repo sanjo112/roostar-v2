@@ -16,6 +16,7 @@ use Roostar\Core\Security\Csrf;
 use Roostar\Core\Security\Encryptor;
 use Roostar\Core\View\AppView;
 use Roostar\Modules\Auth\Services\AuthSession;
+use Roostar\Modules\Auth\Services\PasswordService;
 use Roostar\Modules\RosterData\Repositories\RosterDataRepository;
 use Roostar\Modules\RosterData\Services\RosterDataCsvService;
 use Roostar\Modules\Schools\Repositories\SchoolRepository;
@@ -700,6 +701,7 @@ final class RosterDataController
             $db = Connection::get();
             $creator = new UserCreator($db, new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
             $grants = new PermissionGrantRepository($db);
+            $passwords = new PasswordService($db);
             $count = 0;
 
             foreach ($rows as $row) {
@@ -707,21 +709,38 @@ final class RosterDataController
                 $email = mb_strtolower($csv->value($row, ['email', 'e-mail']));
                 $password = $csv->value($row, ['wachtwoord', 'password']);
 
-                if ($name === '' || $email === '' || strlen($password) < 8 || $creator->emailExists($email)) {
+                if ($name === '' || $email === '') {
                     continue;
                 }
 
-                $teacherId = $creator->create([
-                    'name' => $name,
-                    'email' => $email,
-                    'password' => $password,
-                    'role' => 'leraar',
-                    'school_id' => $schoolId,
-                    'scholengroep_id' => null,
-                ]);
+                if ($password !== '' && strlen($password) < 8) {
+                    continue;
+                }
 
-                foreach (RoleDefaults::basePermissions('leraar') as $permission) {
-                    $grants->grant($teacherId, $permission, 'school', $schoolId);
+                $teacherId = $repository->teacherIdByEmailForSchool($schoolId, $email);
+                if ($teacherId === null) {
+                    if ($creator->emailExists($email)) {
+                        continue;
+                    }
+
+                    $generatedPassword = $password === '';
+                    $password = $generatedPassword ? PasswordService::temporaryPassword() : $password;
+                    $teacherId = $creator->create([
+                        'name' => $name,
+                        'email' => $email,
+                        'password' => $password,
+                        'role' => 'leraar',
+                        'school_id' => $schoolId,
+                        'scholengroep_id' => null,
+                    ]);
+
+                    if ($generatedPassword) {
+                        $passwords->setTemporaryPassword($teacherId, $password);
+                    }
+
+                    foreach (RoleDefaults::basePermissions('leraar') as $permission) {
+                        $grants->grant($teacherId, $permission, 'school', $schoolId);
+                    }
                 }
 
                 $availableSlots = $csv->list($csv->value($row, ['beschikbaarheid', 'available_slots']));
@@ -734,9 +753,7 @@ final class RosterDataController
                     $availableSlots,
                     $subjectIds,
                 );
-                if ($csv->value($row, ['active', 'actief']) === '0') {
-                    $repository->updateTeacher($teacherId, $schoolId, $name, $email, false);
-                }
+                $repository->updateTeacher($teacherId, $schoolId, $name, $email, $csv->value($row, ['active', 'actief']) !== '0');
                 $count++;
             }
 

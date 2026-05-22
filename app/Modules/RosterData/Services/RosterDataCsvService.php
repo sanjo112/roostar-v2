@@ -13,9 +13,9 @@ final class RosterDataCsvService
             throw new \RuntimeException('CSV kon niet worden aangemaakt.');
         }
 
-        fputcsv($stream, $headers, ',', '"', '');
+        fputcsv($stream, $headers, ';', '"', '');
         foreach ($rows as $row) {
-            fputcsv($stream, array_map(static fn (string $header): string => (string) ($row[$header] ?? ''), $headers), ',', '"', '');
+            fputcsv($stream, array_map(static fn (string $header): string => (string) ($row[$header] ?? ''), $headers), ';', '"', '');
         }
 
         rewind($stream);
