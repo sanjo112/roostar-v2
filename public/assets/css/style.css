@@ -3825,6 +3825,9 @@ body.has-modal-open {
 }
 .control-cluster > .icon-btn,
 .control-cluster > .form-select {
+  box-sizing: border-box;
+  height: 38px;
+  min-height: 38px;
   border-radius: 0;
 }
 .control-cluster > .icon-btn:first-child {
@@ -3841,6 +3844,7 @@ body.has-modal-open {
   min-height: 38px;
   padding-top: 0;
   padding-bottom: 0;
+  line-height: 38px;
   border-radius: 7px;
 }
 .week-picker-controls .form-select {
@@ -3863,11 +3867,13 @@ body.has-modal-open {
   flex: 0 0 38px;
   width: 38px;
   height: 38px;
+  min-height: 38px;
 }
 .week-picker-controls .icon-btn {
   flex: 0 0 38px;
   width: 38px;
   height: 38px;
+  min-height: 38px;
   text-decoration: none;
 }
 .schedule-grid-wrap {

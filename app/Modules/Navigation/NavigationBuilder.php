@@ -22,7 +22,7 @@ final class NavigationBuilder
                 new NavigationItem('stage', 'Stage', '/stage', 'briefcase'),
             ],
             'Beheer' => [
-                new NavigationItem('stamdata', 'Stamdata', '/stamdata', 'database', 'Setup'),
+                new NavigationItem('stamdata', 'Stamdata', '/stamdata', 'database'),
                 new NavigationItem('leerlingen', 'Leerlingen', '/leerlingen', 'student'),
                 new NavigationItem('gebruikers', 'Gebruikers', '/gebruikers', 'users'),
                 new NavigationItem('auditlog', 'Auditlog', '/auditlog', 'audit'),
