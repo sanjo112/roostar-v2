@@ -40,6 +40,9 @@ window.roostar = {
 
 window.toast = window.roostar.toast;
 
+document.addEventListener('DOMContentLoaded', closeRestoredModals);
+window.addEventListener('pageshow', closeRestoredModals);
+
 document.addEventListener('DOMContentLoaded', () => {
   const source = document.getElementById('roostar-notifications');
 
@@ -383,5 +386,12 @@ function closeModal(modal) {
   }
 
   modal.hidden = true;
+  document.body.classList.toggle('has-modal-open', document.querySelector('.modal-backdrop:not([hidden])') !== null);
+}
+
+function closeRestoredModals() {
+  document.querySelectorAll('.modal-backdrop:not(.password-overlay)').forEach((modal) => {
+    modal.hidden = true;
+  });
   document.body.classList.toggle('has-modal-open', document.querySelector('.modal-backdrop:not([hidden])') !== null);
 }

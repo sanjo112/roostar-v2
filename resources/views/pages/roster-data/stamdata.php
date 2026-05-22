@@ -1656,11 +1656,29 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
           <?php if ($singleSchoolId !== ''): ?>
             <input type="hidden" name="school_id" value="<?= htmlspecialchars($singleSchoolId) ?>">
           <?php endif; ?>
+          <?php if (($teacherSubjectFilterId ?? '') !== ''): ?>
+            <input type="hidden" name="vak_id" value="<?= htmlspecialchars((string) $teacherSubjectFilterId) ?>">
+          <?php endif; ?>
           <button class="btn btn-outline" type="submit">Export</button>
         </form>
         <button class="btn btn-dark" type="button" data-open-modal="teacher-create-modal">Nieuwe leraar</button>
       </div>
     </div>
+
+    <form class="filter-bar" method="get" action="/stamdata">
+      <input type="hidden" name="tab" value="leraren">
+      <select class="form-select w-filter" name="vak_id" onchange="this.form.submit()" aria-label="Filter leraren op vak">
+        <option value="">Alle vakken</option>
+        <?php foreach (($subjects ?? []) as $subject): ?>
+          <option value="<?= htmlspecialchars((string) $subject['id']) ?>" <?= (string) ($teacherSubjectFilterId ?? '') === (string) $subject['id'] ? 'selected' : '' ?>>
+            <?= htmlspecialchars((string) (($subject['code'] ?? '') ? $subject['code'] . ' · ' : '') . $subject['naam']) ?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+      <?php if (($teacherSubjectFilterId ?? '') !== ''): ?>
+        <a class="btn btn-outline" href="/stamdata?tab=leraren">Reset</a>
+      <?php endif; ?>
+    </form>
 
     <div class="table-wrap">
       <table class="data-table">

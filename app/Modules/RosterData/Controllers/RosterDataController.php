@@ -38,7 +38,7 @@ final class RosterDataController
         $tab = $request->string('tab', 'vakken');
         $tab = array_key_exists($tab, self::TABS) ? $tab : 'vakken';
 
-        return $this->renderMasterData($tab);
+        return $this->renderMasterData($request, $tab);
     }
 
     public function schoolYears(): Response
@@ -685,7 +685,22 @@ final class RosterDataController
 
     public function exportTeachers(Request $request): Response
     {
-        return $this->exportRows($request, 'leraren.csv', ['naam', 'email', 'wachtwoord', 'vakken', 'beschikbaarheid', 'active'], function (RosterDataRepository $repository, $user, ?string $schoolId): array {
+        $subjectFilterId = $request->string('vak_id');
+
+        return $this->exportRows($request, 'leraren.csv', ['naam', 'email', 'wachtwoord', 'vakken', 'beschikbaarheid', 'active'], function (RosterDataRepository $repository, $user, ?string $schoolId) use ($subjectFilterId): array {
+            $teachers = $this->filterBySchool($repository->teachersFor($user), $schoolId);
+
+            if ($subjectFilterId !== '') {
+                $teachers = array_values(array_filter(
+                    $teachers,
+                    static fn (array $teacher): bool => in_array(
+                        $subjectFilterId,
+                        array_map(static fn (array $subject): string => (string) ($subject['id'] ?? ''), $teacher['subjects'] ?? []),
+                        true,
+                    ),
+                ));
+            }
+
             return array_map(static fn (array $teacher): array => [
                 'naam' => (string) $teacher['naam'],
                 'email' => (string) $teacher['email'],
@@ -693,7 +708,7 @@ final class RosterDataController
                 'vakken' => implode(';', array_map(static fn (array $subject): string => (string) ($subject['code'] ?? '') . ':' . (string) ($subject['voorkeur_percentage'] ?? 100), $teacher['subjects'] ?? [])),
                 'beschikbaarheid' => implode(';', $teacher['available_slots'] ?? []),
                 'active' => !empty($teacher['active']) ? '1' : '0',
-            ], $this->filterBySchool($repository->teachersFor($user), $schoolId));
+            ], $teachers);
         });
     }
 
@@ -836,7 +851,7 @@ final class RosterDataController
         return array_values(array_filter($rows, static fn (array $row): bool => (string) ($row['school_id'] ?? '') === $schoolId));
     }
 
-    private function renderMasterData(string $tab): Response
+    private function renderMasterData(Request $request, string $tab): Response
     {
         $user = AuthSession::userContext();
 
@@ -868,6 +883,7 @@ final class RosterDataController
             'locations' => [],
             'rooms' => [],
             'teachers' => [],
+            'teacherSubjectFilterId' => '',
         ];
 
         $load = fn (string $label, callable $callback): array => $this->loadMasterDataSet($label, $callback);
@@ -903,6 +919,19 @@ final class RosterDataController
         if ($tab === 'leraren') {
             $data['teachers'] = $load('leraren', fn (): array => $repository->teachersFor($user));
             $data['subjects'] = $load('vakken', fn (): array => $repository->subjectsFor($user));
+            $subjectFilterId = $request->string('vak_id');
+
+            if ($subjectFilterId !== '') {
+                $data['teacherSubjectFilterId'] = $subjectFilterId;
+                $data['teachers'] = array_values(array_filter(
+                    $data['teachers'],
+                    static fn (array $teacher): bool => in_array(
+                        $subjectFilterId,
+                        array_map(static fn (array $subject): string => (string) ($subject['id'] ?? ''), $teacher['subjects'] ?? []),
+                        true,
+                    ),
+                ));
+            }
         }
 
         return Response::html(AppView::render('roster-data/stamdata', $data));
