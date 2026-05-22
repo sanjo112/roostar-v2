@@ -1344,11 +1344,49 @@ body.has-modal-open {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
+  display: grid;
+  gap: 3px;
 }
-.export-panel {
-  border-top: 1px solid var(--line);
-  margin-top: 18px;
-  padding-top: 18px;
+.import-hint span {
+  color: var(--ink);
+  font-weight: 700;
+}
+.import-hint small {
+  display: block;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.import-export-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(260px, .8fr);
+  gap: 14px;
+  align-items: stretch;
+}
+.import-export-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.import-export-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.import-export-fields {
+  display: grid;
+  gap: 12px;
+}
+.import-export-actions {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+}
+.export-spacer {
+  flex: 1;
 }
 .modal-foot.compact-foot {
   border-top: 0;
@@ -4992,7 +5030,8 @@ table.data-table tbody tr.row-selected {
     flex: 1 1 190px;
   }
   .replacement-range-grid,
-  .impact-summary {
+  .impact-summary,
+  .import-export-grid {
     grid-template-columns: 1fr;
   }
   .view-actions,

@@ -85,7 +85,7 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
 </div>
 
 <div id="student-import-export-modal" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="student-import-export-title" hidden>
-  <div class="modal app-modal">
+  <div class="modal modal-lg app-modal">
     <div class="modal-head">
       <div>
         <div id="student-import-export-title" class="modal-title">Leerlingen importeren en exporteren</div>
@@ -96,52 +96,64 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
       </button>
     </div>
     <div class="modal-body">
-      <form method="post" action="/leerlingen/import" enctype="multipart/form-data">
-        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
-        <div class="app-modal-grid">
-          <div class="form-group">
-            <label class="form-label">School</label>
-            <select class="form-select" name="school_id" required>
-              <?php if ($singleSchoolId === ''): ?>
-                <option value="">Kies een school</option>
-              <?php endif; ?>
-              <?php foreach ($schools as $school): ?>
-                <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
-              <?php endforeach; ?>
-            </select>
+      <div class="import-export-grid">
+        <form method="post" action="/leerlingen/import" enctype="multipart/form-data" class="import-export-card">
+          <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+          <div>
+            <div class="import-export-title">Importeren</div>
+            <div class="muted text-sm">Voeg nieuwe leerlingen toe of werk bestaande bij.</div>
           </div>
-          <div class="form-group">
-            <label class="form-label">CSV bestand</label>
-            <input class="form-input" type="file" name="csv_file" accept=".csv,text/csv" required>
+          <div class="import-export-fields">
+            <div class="form-group">
+              <label class="form-label">School</label>
+              <select class="form-select" name="school_id" required>
+                <?php if ($singleSchoolId === ''): ?>
+                  <option value="">Kies een school</option>
+                <?php endif; ?>
+                <?php foreach ($schools as $school): ?>
+                  <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">CSV bestand</label>
+              <input class="form-input" type="file" name="csv_file" accept=".csv,text/csv" required>
+            </div>
           </div>
-        </div>
-        <div class="import-hint">
-          Verwachte kolommen: <strong>naam</strong>, <strong>leerlingnummer</strong>, <strong>email</strong>, <strong>wachtwoord</strong>, <strong>klas</strong>, <strong>keuzevakken</strong>, <strong>active</strong>.
-          Meerdere keuzevakken mogen met puntkomma in een cel, bijvoorbeeld <strong>WIS;NAT</strong>.
-        </div>
-        <div class="modal-foot compact-foot">
-          <button class="btn btn-dark" type="submit">Importeren</button>
-        </div>
-      </form>
+          <div class="import-hint">
+            <span>Kolommen</span>
+            <strong>naam</strong>, <strong>leerlingnummer</strong>, <strong>email</strong>, <strong>wachtwoord</strong>, <strong>klas</strong>, <strong>keuzevakken</strong>, <strong>active</strong>
+            <small>Meerdere keuzevakken in een cel: WIS;NAT</small>
+          </div>
+          <div class="import-export-actions">
+            <button class="btn btn-dark" type="submit">Importeren</button>
+          </div>
+        </form>
 
-      <form method="get" action="/leerlingen/export" class="export-panel">
-        <div class="app-modal-grid">
-          <div class="form-group">
-            <label class="form-label">School</label>
-            <select class="form-select" name="school_id" required>
-              <?php if ($singleSchoolId === ''): ?>
-                <option value="">Kies een school</option>
-              <?php endif; ?>
-              <?php foreach ($schools as $school): ?>
-                <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
-              <?php endforeach; ?>
-            </select>
+        <form method="get" action="/leerlingen/export" class="import-export-card">
+          <div>
+            <div class="import-export-title">Exporteren</div>
+            <div class="muted text-sm">Download de huidige leerlingenlijst als CSV.</div>
           </div>
-        </div>
-        <div class="modal-foot compact-foot">
-          <button class="btn btn-outline" type="submit">Exporteren</button>
-        </div>
-      </form>
+          <div class="import-export-fields">
+            <div class="form-group">
+              <label class="form-label">School</label>
+              <select class="form-select" name="school_id" required>
+                <?php if ($singleSchoolId === ''): ?>
+                  <option value="">Kies een school</option>
+                <?php endif; ?>
+                <?php foreach ($schools as $school): ?>
+                  <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+          </div>
+          <div class="export-spacer"></div>
+          <div class="import-export-actions">
+            <button class="btn btn-outline" type="submit">Exporteren</button>
+          </div>
+        </form>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-outline" type="button" data-close-modal>Sluiten</button>
