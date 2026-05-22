@@ -32,6 +32,7 @@ final class AlgorithmicRosterGenerator
         $teacherDayHours = [];
         $teacherWeekHours = [];
         $teacherSubjectHours = [];
+        $teacherDaySchedule = [];
 
         foreach ($lessonGroups as $group) {
             for ($index = 0; $index < (int) $group['hoursPerWeek']; $index++) {
@@ -46,6 +47,7 @@ final class AlgorithmicRosterGenerator
                     $teacherDayHours,
                     $teacherWeekHours,
                     $teacherSubjectHours,
+                    $teacherDaySchedule,
                 );
 
                 if ($placement === null) {
@@ -80,6 +82,11 @@ final class AlgorithmicRosterGenerator
                 $teacherDayHours[$placement['teacher']['id']][$day] = ($teacherDayHours[$placement['teacher']['id']][$day] ?? 0) + 1;
                 $teacherWeekHours[$placement['teacher']['id']] = ($teacherWeekHours[$placement['teacher']['id']] ?? 0) + 1;
                 $teacherSubjectHours[$placement['teacher']['id']][$group['subject']['id']] = ($teacherSubjectHours[$placement['teacher']['id']][$group['subject']['id']] ?? 0) + 1;
+                $teacherDaySchedule[$placement['teacher']['id']][$day][$period] = [
+                    'subjectId' => (string) $group['subject']['id'],
+                    'roomId' => (string) $placement['room']['id'],
+                    'locationKey' => $this->roomLocationKey($placement['room']),
+                ];
             }
         }
 
@@ -114,6 +121,7 @@ final class AlgorithmicRosterGenerator
         array $teacherDayHours,
         array $teacherWeekHours,
         array $teacherSubjectHours,
+        array $teacherDaySchedule,
     ): ?array {
         $best = null;
         $bestScore = PHP_INT_MAX;
@@ -148,7 +156,8 @@ final class AlgorithmicRosterGenerator
                     }
 
                     $score = $this->score($group, $room, $slot, $groupDayHours)
-                        + $this->teacherWorkloadPenalty($group, $teacher, $constraints, $teacherWeekHours, $teacherSubjectHours);
+                        + $this->teacherWorkloadPenalty($group, $teacher, $constraints, $teacherWeekHours, $teacherSubjectHours)
+                        + $this->teacherContinuityPenalty($group, $teacher, $room, $slot, $teacherDaySchedule);
                     if ($score < $bestScore) {
                         $bestScore = $score;
                         $best = ['slot' => $slot, 'teacher' => $teacher, 'room' => $room];
@@ -294,6 +303,107 @@ final class AlgorithmicRosterGenerator
         $subjectMixPenalty = (int) round(abs($projectedShare - $targetShare) * 1400);
 
         return $weekLoadPenalty + $subjectMixPenalty;
+    }
+
+    private function teacherContinuityPenalty(array $group, array $teacher, array $room, array $slot, array $teacherDaySchedule): int
+    {
+        $teacherId = (string) $teacher['id'];
+        $day = (string) $slot['day'];
+        $period = (int) $slot['period'];
+        $daySchedule = $teacherDaySchedule[$teacherId][$day] ?? [];
+
+        if ($daySchedule === []) {
+            return 0;
+        }
+
+        $subjectId = (string) $group['subject']['id'];
+        $roomId = (string) $room['id'];
+        $locationKey = $this->roomLocationKey($room);
+        $penalty = 0;
+        $sameSubjectOnDay = 0;
+        $sameLocationOnDay = 0;
+
+        foreach ($daySchedule as $scheduledLesson) {
+            if ((string) ($scheduledLesson['subjectId'] ?? '') === $subjectId) {
+                $sameSubjectOnDay++;
+            }
+
+            if ((string) ($scheduledLesson['locationKey'] ?? '') === $locationKey) {
+                $sameLocationOnDay++;
+            }
+        }
+
+        foreach ([-1, 1] as $offset) {
+            $neighbor = $daySchedule[$period + $offset] ?? null;
+
+            if (!is_array($neighbor)) {
+                continue;
+            }
+
+            $sameSubject = (string) ($neighbor['subjectId'] ?? '') === $subjectId;
+            $sameRoom = (string) ($neighbor['roomId'] ?? '') === $roomId;
+            $sameLocation = (string) ($neighbor['locationKey'] ?? '') === $locationKey;
+
+            if ($sameSubject && $sameRoom) {
+                $penalty -= 700;
+                continue;
+            }
+
+            if ($sameSubject && $sameLocation) {
+                $penalty -= 560;
+                continue;
+            }
+
+            if ($sameSubject) {
+                $penalty -= 320;
+                continue;
+            }
+
+            $penalty += $sameLocation ? 360 : 900;
+        }
+
+        if ($sameSubjectOnDay > 0) {
+            $nearestSameSubjectDistance = $this->nearestLessonDistance($daySchedule, $period, 'subjectId', $subjectId);
+            $penalty += min(900, max(0, $nearestSameSubjectDistance - 1) * 180);
+            $penalty -= min(600, $sameSubjectOnDay * 180);
+        }
+
+        if ($sameLocationOnDay > 0) {
+            $penalty -= min(240, $sameLocationOnDay * 80);
+        }
+
+        $previous = $daySchedule[$period - 1] ?? null;
+        $next = $daySchedule[$period + 1] ?? null;
+        if (is_array($previous) && is_array($next)) {
+            $previousSubject = (string) ($previous['subjectId'] ?? '');
+            $nextSubject = (string) ($next['subjectId'] ?? '');
+
+            if ($previousSubject !== $subjectId && $nextSubject !== $subjectId) {
+                $penalty += $previousSubject === $nextSubject ? 1200 : 760;
+            }
+        }
+
+        return $penalty;
+    }
+
+    private function nearestLessonDistance(array $daySchedule, int $period, string $field, string $value): int
+    {
+        $nearest = 99;
+
+        foreach ($daySchedule as $scheduledPeriod => $scheduledLesson) {
+            if ((string) ($scheduledLesson[$field] ?? '') !== $value) {
+                continue;
+            }
+
+            $nearest = min($nearest, abs((int) $scheduledPeriod - $period));
+        }
+
+        return $nearest;
+    }
+
+    private function roomLocationKey(array $room): string
+    {
+        return (string) ($room['locationId'] ?? $room['location_id'] ?? $room['locatie_id'] ?? $room['id']);
     }
 
     private function qualifiedTeachers(array $group, array $constraints): array

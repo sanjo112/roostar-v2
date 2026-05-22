@@ -637,6 +637,7 @@ final class RosterGenerationRepository
                 l.id,
                 l.naam_encrypted,
                 l.capaciteit,
+                l.locatie_id,
                 l.beschikbaarheid_json,
                 loc.extern AS locatie_extern,
                 GROUP_CONCAT(lv.vak_id) AS subject_ids
@@ -645,7 +646,7 @@ final class RosterGenerationRepository
             LEFT JOIN locaties loc ON loc.id = l.locatie_id
             WHERE l.school_id = :school_id
               AND l.active = 1
-            GROUP BY l.id, l.naam_encrypted, l.capaciteit, l.beschikbaarheid_json, loc.extern
+            GROUP BY l.id, l.naam_encrypted, l.capaciteit, l.locatie_id, l.beschikbaarheid_json, loc.extern
             ORDER BY l.created_at
         ");
         $stmt->execute(['school_id' => $schoolId]);
@@ -659,6 +660,7 @@ final class RosterGenerationRepository
                 'id' => (string) $row['id'],
                 'name' => $this->decrypt((string) $row['naam_encrypted']),
                 'capacity' => (int) ($row['capaciteit'] ?? 0),
+                'locationId' => (string) ($row['locatie_id'] ?? ''),
                 'subjectIds' => $row['subject_ids'] ? explode(',', (string) $row['subject_ids']) : [],
                 'externalLocation' => (int) ($row['locatie_extern'] ?? 0) === 1,
                 'availableSlots' => is_array($availability) ? array_values(array_filter($availability, 'is_string')) : null,
