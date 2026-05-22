@@ -434,6 +434,33 @@ body {
   margin: 0;
   display: inline-flex;
 }
+.csv-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+  background: #FAFBFE;
+}
+.csv-tool-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.csv-tool-form .form-select {
+  width: 190px;
+  min-height: 34px;
+}
+.csv-tool-form .form-input[type="file"] {
+  width: 230px;
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
 .user-filter-form {
   display: flex;
   align-items: center;
@@ -1425,6 +1452,45 @@ body.has-modal-open {
 .period-manager-row .form-select,
 .period-manager-create-grid .form-input,
 .period-manager-create-grid .form-select {
+  height: 38px;
+  min-height: 38px;
+  border-radius: 7px;
+}
+.break-manager-head {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 130px 145px 145px 104px minmax(170px, auto);
+  gap: 8px;
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.break-manager-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 130px 145px 145px 104px minmax(170px, auto);
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.break-manager-create-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 130px 145px 145px auto;
+  gap: 8px;
+  align-items: center;
+}
+.break-manager-row .form-group,
+.break-manager-create-grid .form-group {
+  margin-bottom: 0;
+}
+.break-manager-row .form-input,
+.break-manager-row .form-select,
+.break-manager-create-grid .form-input,
+.break-manager-create-grid .form-select {
   height: 38px;
   min-height: 38px;
   border-radius: 7px;
@@ -5012,7 +5078,9 @@ table.data-table tbody tr.row-selected {
   .app-modal-grid,
   .modal-picker-list,
   .period-manager-row,
-  .period-manager-create-grid {
+  .period-manager-create-grid,
+  .break-manager-row,
+  .break-manager-create-grid {
     grid-template-columns: 1fr;
   }
   .period-manager-actions {

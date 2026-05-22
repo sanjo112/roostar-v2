@@ -5,6 +5,10 @@ $periodsBySchoolYear = [];
 foreach (($periods ?? []) as $period) {
     $periodsBySchoolYear[(string) $period['schooljaar_id']][] = $period;
 }
+$breaksBySchoolYear = [];
+foreach (($schoolYearBreaks ?? []) as $break) {
+    $breaksBySchoolYear[(string) $break['schooljaar_id']][] = $break;
+}
 $teacherDays = ['ma' => 'Ma', 'di' => 'Di', 'wo' => 'Wo', 'do' => 'Do', 'vr' => 'Vr'];
 $teacherDayLabels = ['ma' => 'Maandag', 'di' => 'Dinsdag', 'wo' => 'Woensdag', 'do' => 'Donderdag', 'vr' => 'Vrijdag'];
 $teacherPeriods = range(1, 9);
@@ -53,6 +57,13 @@ $periodWeekLabel = static function (array $period, string $side, array $schoolYe
 
     return $year . ' wk ' . (int) $week;
 };
+$dateRangeLabel = static function (array $item): string {
+    $start = date('d-m-Y', strtotime((string) $item['startdatum']));
+    $end = date('d-m-Y', strtotime((string) $item['einddatum']));
+
+    return $start === $end ? $start : $start . ' - ' . $end;
+};
+$breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Vakantie' : 'Vrije dag';
 ?>
 
 <section class="card overview-card">
@@ -143,6 +154,7 @@ $periodWeekLabel = static function (array $period, string $side, array $schoolYe
             <th>Start</th>
             <th>Einde</th>
             <th>Periodes</th>
+            <th>Vrije dagen</th>
             <th>Status</th>
             <th>Acties</th>
           </tr>
@@ -150,6 +162,7 @@ $periodWeekLabel = static function (array $period, string $side, array $schoolYe
         <tbody>
           <?php foreach (($schoolYears ?? []) as $schoolYear): ?>
             <?php $schoolYearPeriods = $periodsBySchoolYear[(string) $schoolYear['id']] ?? []; ?>
+            <?php $schoolYearBreaks = $breaksBySchoolYear[(string) $schoolYear['id']] ?? []; ?>
             <tr>
               <td><strong><?= htmlspecialchars((string) $schoolYear['naam']) ?></strong></td>
               <td class="muted"><?= htmlspecialchars((string) $schoolYear['school_naam']) ?></td>
@@ -169,16 +182,32 @@ $periodWeekLabel = static function (array $period, string $side, array $schoolYe
                   <?php endif; ?>
                 </div>
               </td>
+              <td>
+                <div class="inline-pill-list">
+                  <?php foreach (array_slice($schoolYearBreaks, 0, 2) as $break): ?>
+                    <span class="soft-pill"><?= htmlspecialchars((string) $break['naam']) ?> · <?= htmlspecialchars($dateRangeLabel($break)) ?></span>
+                  <?php endforeach; ?>
+                  <?php if (count($schoolYearBreaks) > 2): ?>
+                    <span class="soft-pill">+<?= count($schoolYearBreaks) - 2 ?></span>
+                  <?php endif; ?>
+                  <?php if ($schoolYearBreaks === []): ?>
+                    <span class="muted">Geen</span>
+                  <?php endif; ?>
+                </div>
+              </td>
               <td><span class="status <?= !empty($schoolYear['active']) ? 'st-done' : 'st-wait' ?>"><?= !empty($schoolYear['active']) ? 'Actief' : 'Inactief' ?></span></td>
               <td>
-                <button class="btn btn-outline btn-sm" type="button" data-open-modal="schoolyear-edit-<?= htmlspecialchars((string) $schoolYear['id']) ?>">Bewerken</button>
-                <button class="btn btn-outline btn-sm" type="button" data-open-modal="period-manage-<?= htmlspecialchars((string) $schoolYear['id']) ?>">Periodes</button>
+                <div class="table-actions">
+                  <button class="btn btn-outline btn-sm" type="button" data-open-modal="schoolyear-edit-<?= htmlspecialchars((string) $schoolYear['id']) ?>">Bewerken</button>
+                  <button class="btn btn-outline btn-sm" type="button" data-open-modal="period-manage-<?= htmlspecialchars((string) $schoolYear['id']) ?>">Periodes</button>
+                  <button class="btn btn-outline btn-sm" type="button" data-open-modal="break-manage-<?= htmlspecialchars((string) $schoolYear['id']) ?>">Vrije dagen</button>
+                </div>
               </td>
             </tr>
           <?php endforeach; ?>
 
           <?php if (empty($schoolYears)): ?>
-            <tr><td colspan="7" class="muted">Nog geen schooljaren aangemaakt.</td></tr>
+            <tr><td colspan="8" class="muted">Nog geen schooljaren aangemaakt.</td></tr>
           <?php endif; ?>
         </tbody>
       </table>
@@ -357,6 +386,118 @@ $periodWeekLabel = static function (array $period, string $side, array $schoolYe
       </div>
     </div>
   <?php endforeach; ?>
+
+  <?php foreach (($schoolYears ?? []) as $schoolYear): ?>
+    <?php $schoolYearBreaks = $breaksBySchoolYear[(string) $schoolYear['id']] ?? []; ?>
+    <div id="break-manage-<?= htmlspecialchars((string) $schoolYear['id']) ?>" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="break-manage-title-<?= htmlspecialchars((string) $schoolYear['id']) ?>" hidden>
+      <div class="modal modal-xl app-modal">
+        <div class="modal-head">
+          <div>
+            <div id="break-manage-title-<?= htmlspecialchars((string) $schoolYear['id']) ?>" class="modal-title">Vrije dagen beheren</div>
+            <div class="muted text-sm"><?= htmlspecialchars((string) $schoolYear['naam']) ?> · <?= htmlspecialchars((string) $schoolYear['school_naam']) ?></div>
+          </div>
+          <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="period-manager">
+            <div class="period-manager-list">
+              <?php if ($schoolYearBreaks !== []): ?>
+                <div class="break-manager-head">
+                  <span>Naam</span>
+                  <span>Type</span>
+                  <span>Van</span>
+                  <span>Tot en met</span>
+                  <span>Status</span>
+                  <span>Acties</span>
+                </div>
+              <?php endif; ?>
+              <?php foreach ($schoolYearBreaks as $break): ?>
+                <form method="post" action="/schooljaar/vrije-dagen/bewerk" class="break-manager-row">
+                  <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                  <input type="hidden" name="schooljaar_id" value="<?= htmlspecialchars((string) $schoolYear['id']) ?>">
+                  <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $schoolYear['school_id']) ?>">
+                  <input type="hidden" name="vrije_dag_id" value="<?= htmlspecialchars((string) $break['id']) ?>">
+                  <div class="form-group">
+                    <label class="form-label sr-only">Naam</label>
+                    <input class="form-input" type="text" name="naam" value="<?= htmlspecialchars((string) $break['naam']) ?>" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label sr-only">Type</label>
+                    <select class="form-select" name="type" required>
+                      <option value="vrije_dag" <?= (string) $break['type'] === 'vrije_dag' ? 'selected' : '' ?>>Vrije dag</option>
+                      <option value="vakantie" <?= (string) $break['type'] === 'vakantie' ? 'selected' : '' ?>>Vakantie</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label sr-only">Startdatum</label>
+                    <input class="form-input" type="date" name="startdatum" value="<?= htmlspecialchars((string) $break['startdatum']) ?>" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label sr-only">Einddatum</label>
+                    <input class="form-input" type="date" name="einddatum" value="<?= htmlspecialchars((string) $break['einddatum']) ?>" required>
+                  </div>
+                  <label class="period-active-toggle">
+                    <input type="hidden" name="active" value="0">
+                    <input type="checkbox" name="active" value="1" <?= !empty($break['active']) ? 'checked' : '' ?>>
+                    <span>Actief</span>
+                  </label>
+                  <div class="period-manager-actions">
+                    <button class="btn btn-dark btn-sm" type="submit">Opslaan</button>
+                    <button class="btn btn-outline btn-sm danger-soft" type="submit" form="break-delete-<?= htmlspecialchars((string) $break['id']) ?>">Verwijderen</button>
+                  </div>
+                </form>
+                <form id="break-delete-<?= htmlspecialchars((string) $break['id']) ?>" method="post" action="/schooljaar/vrije-dagen/verwijder">
+                  <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                  <input type="hidden" name="schooljaar_id" value="<?= htmlspecialchars((string) $schoolYear['id']) ?>">
+                  <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $schoolYear['school_id']) ?>">
+                  <input type="hidden" name="vrije_dag_id" value="<?= htmlspecialchars((string) $break['id']) ?>">
+                </form>
+              <?php endforeach; ?>
+              <?php if ($schoolYearBreaks === []): ?>
+                <div class="period-manager-empty">Nog geen vrije dagen of vakanties voor dit schooljaar.</div>
+              <?php endif; ?>
+            </div>
+
+            <form method="post" action="/schooljaar/vrije-dagen" class="period-manager-create">
+              <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+              <input type="hidden" name="schooljaar_id" value="<?= htmlspecialchars((string) $schoolYear['id']) ?>">
+              <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $schoolYear['school_id']) ?>">
+              <div class="period-manager-create-head">
+                <strong>Vrije dag of vakantie toevoegen</strong>
+              </div>
+              <div class="break-manager-create-grid">
+                <div class="form-group">
+                  <label class="form-label sr-only">Naam</label>
+                  <input class="form-input" type="text" name="naam" placeholder="Meivakantie" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label sr-only">Type</label>
+                  <select class="form-select" name="type" required>
+                    <option value="vrije_dag">Vrije dag</option>
+                    <option value="vakantie">Vakantie</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label sr-only">Startdatum</label>
+                  <input class="form-input" type="date" name="startdatum" min="<?= htmlspecialchars((string) $schoolYear['startdatum']) ?>" max="<?= htmlspecialchars((string) $schoolYear['einddatum']) ?>" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label sr-only">Einddatum</label>
+                  <input class="form-input" type="date" name="einddatum" min="<?= htmlspecialchars((string) $schoolYear['startdatum']) ?>" max="<?= htmlspecialchars((string) $schoolYear['einddatum']) ?>" required>
+                </div>
+                <button class="btn btn-dark btn-sm" type="submit">Toevoegen</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-outline" type="button" data-close-modal>Sluiten</button>
+        </div>
+      </div>
+    </div>
+  <?php endforeach; ?>
 <?php endif; ?>
 
 <?php if (($activeTab ?? 'vakken') === 'klassen'): ?>
@@ -431,6 +572,28 @@ $periodWeekLabel = static function (array $period, string $side, array $schoolYe
       <div class="view-actions">
         <button class="btn btn-dark" type="button" data-open-modal="class-create-modal">Klas aanmaken</button>
       </div>
+    </div>
+    <div class="csv-tools">
+      <form class="csv-tool-form" method="get" action="/klassen/export">
+        <select class="form-select" name="school_id">
+          <option value="">Alle scholen</option>
+          <?php foreach ($schools as $school): ?>
+            <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <button class="btn btn-outline btn-sm" type="submit">CSV export</button>
+      </form>
+      <form class="csv-tool-form" method="post" action="/klassen/import" enctype="multipart/form-data">
+        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+        <select class="form-select" name="school_id" required>
+          <?php if ($singleSchoolId === ''): ?><option value="">Kies school</option><?php endif; ?>
+          <?php foreach ($schools as $school): ?>
+            <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <input class="form-input" type="file" name="csv_file" accept=".csv,text/csv" required>
+        <button class="btn btn-outline btn-sm" type="submit">CSV import</button>
+      </form>
     </div>
 
     <div class="table-wrap">
@@ -591,6 +754,28 @@ $periodWeekLabel = static function (array $period, string $side, array $schoolYe
       <div class="view-actions">
         <button class="btn btn-dark" type="button" data-open-modal="subject-create-modal">Vak aanmaken</button>
       </div>
+    </div>
+    <div class="csv-tools">
+      <form class="csv-tool-form" method="get" action="/vakken/export">
+        <select class="form-select" name="school_id">
+          <option value="">Alle scholen</option>
+          <?php foreach ($schools as $school): ?>
+            <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <button class="btn btn-outline btn-sm" type="submit">CSV export</button>
+      </form>
+      <form class="csv-tool-form" method="post" action="/vakken/import" enctype="multipart/form-data">
+        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+        <select class="form-select" name="school_id" required>
+          <?php if ($singleSchoolId === ''): ?><option value="">Kies school</option><?php endif; ?>
+          <?php foreach ($schools as $school): ?>
+            <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <input class="form-input" type="file" name="csv_file" accept=".csv,text/csv" required>
+        <button class="btn btn-outline btn-sm" type="submit">CSV import</button>
+      </form>
     </div>
 
     <div class="table-wrap">
@@ -1320,6 +1505,28 @@ $periodWeekLabel = static function (array $period, string $side, array $schoolYe
       <div class="view-actions">
         <button class="btn btn-dark" type="button" data-open-modal="teacher-create-modal">Nieuwe leraar</button>
       </div>
+    </div>
+    <div class="csv-tools">
+      <form class="csv-tool-form" method="get" action="/leraren/export">
+        <select class="form-select" name="school_id">
+          <option value="">Alle scholen</option>
+          <?php foreach ($schools as $school): ?>
+            <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <button class="btn btn-outline btn-sm" type="submit">CSV export</button>
+      </form>
+      <form class="csv-tool-form" method="post" action="/leraren/import" enctype="multipart/form-data">
+        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+        <select class="form-select" name="school_id" required>
+          <?php if ($singleSchoolId === ''): ?><option value="">Kies school</option><?php endif; ?>
+          <?php foreach ($schools as $school): ?>
+            <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <input class="form-input" type="file" name="csv_file" accept=".csv,text/csv" required>
+        <button class="btn btn-outline btn-sm" type="submit">CSV import</button>
+      </form>
     </div>
 
     <div class="table-wrap">

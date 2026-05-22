@@ -143,7 +143,7 @@ final class TestPlanningRepository
             INNER JOIN scholen s ON s.id = sj.school_id
             WHERE {$scopeSql}
               AND sp.schooljaar_id = :schooljaar_id
-            ORDER BY sp.week_van, sp.naam
+            ORDER BY COALESCE(sp.week_van_jaar, YEAR(sj.startdatum)), sp.week_van, sp.naam
         ");
         $stmt->execute($params);
 

@@ -62,6 +62,29 @@ final class RosterDataRepository
         ], $stmt->fetchAll());
     }
 
+    public function schoolYearBreaksFor(UserContext $user): array
+    {
+        [$scopeSql, $params] = $this->schoolScopeSql($user, 's');
+        $stmt = $this->db->prepare("
+            SELECT
+                svd.*,
+                sj.naam AS schooljaar_naam,
+                sj.school_id,
+                s.naam_encrypted AS school_naam_encrypted
+            FROM schooljaar_vrije_dagen svd
+            INNER JOIN schooljaren sj ON sj.id = svd.schooljaar_id
+            INNER JOIN scholen s ON s.id = sj.school_id
+            WHERE {$scopeSql}
+            ORDER BY sj.startdatum DESC, svd.startdatum, svd.naam
+        ");
+        $stmt->execute($params);
+
+        return array_map(fn (array $row): array => [
+            ...$row,
+            'school_naam' => $this->decrypt((string) $row['school_naam_encrypted']),
+        ], $stmt->fetchAll());
+    }
+
     public function classesFor(UserContext $user): array
     {
         return $this->encryptedRowsFor($user, 'klassen', 'k', "
@@ -403,7 +426,78 @@ final class RosterDataRepository
         ]);
     }
 
-    public function createClass(string $schoolId, string $name, ?string $schoolYearId, ?string $programId, ?int $yearLevel): void
+    public function createSchoolYearBreak(string $schoolYearId, string $schoolId, string $name, string $type, string $startDate, string $endDate): void
+    {
+        if (!$this->schoolYearBelongsToSchool($schoolYearId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een schooljaar van dezelfde school.');
+        }
+
+        $type = $this->normalizeBreakType($type);
+        $this->assertValidBreakDates($schoolYearId, $startDate, $endDate);
+
+        $stmt = $this->db->prepare("
+            INSERT INTO schooljaar_vrije_dagen (id, schooljaar_id, naam, type, startdatum, einddatum, active, created_at, updated_at)
+            VALUES (:id, :schooljaar_id, :naam, :type, :startdatum, :einddatum, 1, NOW(), NOW())
+        ");
+        $stmt->execute([
+            'id' => Str::uuid(),
+            'schooljaar_id' => $schoolYearId,
+            'naam' => $name,
+            'type' => $type,
+            'startdatum' => $startDate,
+            'einddatum' => $endDate,
+        ]);
+    }
+
+    public function updateSchoolYearBreak(string $breakId, string $schoolYearId, string $schoolId, string $name, string $type, string $startDate, string $endDate, bool $active): void
+    {
+        if (!$this->schoolYearBreakBelongsToSchoolYear($breakId, $schoolYearId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een vrije dag van hetzelfde schooljaar.');
+        }
+
+        $type = $this->normalizeBreakType($type);
+        $this->assertValidBreakDates($schoolYearId, $startDate, $endDate);
+
+        $stmt = $this->db->prepare("
+            UPDATE schooljaar_vrije_dagen
+            SET naam = :naam,
+                type = :type,
+                startdatum = :startdatum,
+                einddatum = :einddatum,
+                active = :active,
+                updated_at = NOW()
+            WHERE id = :id
+              AND schooljaar_id = :schooljaar_id
+        ");
+        $stmt->execute([
+            'id' => $breakId,
+            'schooljaar_id' => $schoolYearId,
+            'naam' => $name,
+            'type' => $type,
+            'startdatum' => $startDate,
+            'einddatum' => $endDate,
+            'active' => $active ? 1 : 0,
+        ]);
+    }
+
+    public function deleteSchoolYearBreak(string $breakId, string $schoolYearId, string $schoolId): void
+    {
+        if (!$this->schoolYearBreakBelongsToSchoolYear($breakId, $schoolYearId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een vrije dag van hetzelfde schooljaar.');
+        }
+
+        $stmt = $this->db->prepare("
+            DELETE FROM schooljaar_vrije_dagen
+            WHERE id = :id
+              AND schooljaar_id = :schooljaar_id
+        ");
+        $stmt->execute([
+            'id' => $breakId,
+            'schooljaar_id' => $schoolYearId,
+        ]);
+    }
+
+    public function createClass(string $schoolId, string $name, ?string $schoolYearId, ?string $programId, ?int $yearLevel): string
     {
         if ($schoolYearId !== null && !$this->schoolYearBelongsToSchool($schoolYearId, $schoolId)) {
             throw new \InvalidArgumentException('Kies een schooljaar van dezelfde school.');
@@ -413,13 +507,67 @@ final class RosterDataRepository
             throw new \InvalidArgumentException('Kies een opleiding van dezelfde school.');
         }
 
-        $this->createEncrypted('klassen', [
+        return $this->createEncrypted('klassen', [
             'school_id' => $schoolId,
             'schooljaar_id' => $schoolYearId,
             'opleiding_id' => $programId,
             'naam' => $name,
             'leerjaar' => $yearLevel,
         ]);
+    }
+
+    public function schoolYearIdByName(string $schoolId, string $name): ?string
+    {
+        if (trim($name) === '') {
+            return null;
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT id
+            FROM schooljaren
+            WHERE school_id = :school_id
+              AND naam = :naam
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'school_id' => $schoolId,
+            'naam' => trim($name),
+        ]);
+        $id = $stmt->fetchColumn();
+
+        return is_string($id) ? $id : null;
+    }
+
+    public function programIdByCodeOrName(string $schoolId, string $value): ?string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT id, code, naam_encrypted
+            FROM opleidingen
+            WHERE school_id = :school_id
+              AND active = 1
+            ORDER BY code = :code DESC, created_at DESC
+        ");
+        $stmt->execute([
+            'school_id' => $schoolId,
+            'code' => strtoupper($value),
+        ]);
+
+        foreach ($stmt->fetchAll() as $row) {
+            if (strtoupper((string) ($row['code'] ?? '')) === strtoupper($value)) {
+                return (string) $row['id'];
+            }
+
+            if ($this->decrypt((string) $row['naam_encrypted']) === $value) {
+                return (string) $row['id'];
+            }
+        }
+
+        return null;
     }
 
     public function updateClass(string $classId, string $schoolId, string $name, ?string $schoolYearId, ?string $programId, ?int $yearLevel, bool $active): void
@@ -482,9 +630,29 @@ final class RosterDataRepository
         return (bool) $stmt->fetchColumn();
     }
 
-    public function createSubject(string $schoolId, string $name, string $code): void
+    public function schoolYearBreakBelongsToSchoolYear(string $breakId, string $schoolYearId, string $schoolId): bool
     {
-        $this->createEncrypted('vakken', [
+        $stmt = $this->db->prepare("
+            SELECT 1
+            FROM schooljaar_vrije_dagen svd
+            INNER JOIN schooljaren sj ON sj.id = svd.schooljaar_id
+            WHERE svd.id = :id
+              AND svd.schooljaar_id = :schooljaar_id
+              AND sj.school_id = :school_id
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'id' => $breakId,
+            'schooljaar_id' => $schoolYearId,
+            'school_id' => $schoolId,
+        ]);
+
+        return (bool) $stmt->fetchColumn();
+    }
+
+    public function createSubject(string $schoolId, string $name, string $code): string
+    {
+        return $this->createEncrypted('vakken', [
             'school_id' => $schoolId,
             'naam' => $name,
             'code' => $code !== '' ? strtoupper($code) : null,
@@ -502,6 +670,37 @@ final class RosterDataRepository
             'code' => $code !== '' ? strtoupper($code) : null,
             'active' => $active ? 1 : 0,
         ]);
+    }
+
+    public function subjectIdsByCodes(string $schoolId, array $codes): array
+    {
+        $codes = array_values(array_unique(array_filter(array_map(
+            static fn (mixed $code): string => strtoupper(trim((string) $code)),
+            $codes,
+        ))));
+
+        if ($codes === []) {
+            return [];
+        }
+
+        $placeholders = [];
+        $params = ['school_id' => $schoolId];
+        foreach ($codes as $index => $code) {
+            $key = 'code_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $code;
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT id
+            FROM vakken
+            WHERE school_id = :school_id
+              AND code IN (" . implode(', ', $placeholders) . ")
+              AND active = 1
+        ");
+        $stmt->execute($params);
+
+        return array_column($stmt->fetchAll(), 'id');
     }
 
     public function createProgram(string $schoolId, string $name, string $code, string $level, array $subjectIds, array $electiveSubjectIds = [], array $subjectHours = []): void
@@ -1137,6 +1336,34 @@ final class RosterDataRepository
             throw new \InvalidArgumentException('Weeknummers moeten tussen 1 en 53 liggen.');
         }
 
+    }
+
+    private function normalizeBreakType(string $type): string
+    {
+        return in_array($type, ['vrije_dag', 'vakantie'], true) ? $type : 'vrije_dag';
+    }
+
+    private function assertValidBreakDates(string $schoolYearId, string $startDate, string $endDate): void
+    {
+        if (!$this->validDate($startDate) || !$this->validDate($endDate)) {
+            throw new \InvalidArgumentException('Gebruik geldige datums.');
+        }
+
+        if ($endDate < $startDate) {
+            throw new \InvalidArgumentException('De einddatum moet na de startdatum liggen.');
+        }
+
+        $schoolYear = $this->schoolYearDates($schoolYearId);
+        if ($startDate < (string) $schoolYear['startdatum'] || $endDate > (string) $schoolYear['einddatum']) {
+            throw new \InvalidArgumentException('Vrije dagen moeten binnen het schooljaar vallen.');
+        }
+    }
+
+    private function validDate(string $date): bool
+    {
+        $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+
+        return $parsed instanceof \DateTimeImmutable && $parsed->format('Y-m-d') === $date;
     }
 
     private function normalizePeriodWeekYears(string $schoolYearId, int $weekFrom, int $weekTo, ?int $weekFromYear, ?int $weekToYear): array
