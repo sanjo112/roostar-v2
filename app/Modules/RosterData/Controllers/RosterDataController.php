@@ -747,9 +747,9 @@ final class RosterDataController
             throw new \RuntimeException('CSV kon niet worden aangemaakt.');
         }
 
-        fputcsv($stream, $headers);
+        fputcsv($stream, $headers, ',', '"', '');
         foreach ($rows as $row) {
-            fputcsv($stream, array_map(static fn (string $header): string => (string) ($row[$header] ?? ''), $headers));
+            fputcsv($stream, array_map(static fn (string $header): string => (string) ($row[$header] ?? ''), $headers), ',', '"', '');
         }
 
         rewind($stream);
@@ -772,9 +772,10 @@ final class RosterDataController
             throw new \InvalidArgumentException('CSV bestand kon niet worden gelezen.');
         }
 
+        $delimiter = $this->detectCsvDelimiter($handle);
         $headers = null;
         $rows = [];
-        while (($data = fgetcsv($handle, 0, ',')) !== false) {
+        while (($data = fgetcsv($handle, 0, $delimiter, '"', '')) !== false) {
             if ($headers === null) {
                 $headers = array_map([$this, 'normalizeCsvHeader'], $data);
                 continue;
@@ -801,8 +802,28 @@ final class RosterDataController
         return $rows;
     }
 
+    /**
+     * @param resource $handle
+     */
+    private function detectCsvDelimiter($handle): string
+    {
+        $sample = fgets($handle);
+        rewind($handle);
+
+        if (!is_string($sample)) {
+            return ',';
+        }
+
+        $delimiters = [',' => substr_count($sample, ','), ';' => substr_count($sample, ';'), "\t" => substr_count($sample, "\t")];
+        arsort($delimiters);
+        $delimiter = (string) array_key_first($delimiters);
+
+        return ($delimiters[$delimiter] ?? 0) > 0 ? $delimiter : ',';
+    }
+
     private function normalizeCsvHeader(string $header): string
     {
+        $header = preg_replace('/^\xEF\xBB\xBF/', '', $header) ?? $header;
         $header = strtolower(trim($header));
         $header = str_replace([' ', '-'], '_', $header);
 
