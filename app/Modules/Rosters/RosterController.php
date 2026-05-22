@@ -7,6 +7,7 @@ namespace Roostar\Modules\Rosters;
 use Roostar\Core\Database\Connection;
 use Roostar\Core\Http\Request;
 use Roostar\Core\Http\Response;
+use Roostar\Core\Http\View;
 use Roostar\Core\Notifications\NotificationBag;
 use Roostar\Core\Security\Csrf;
 use Roostar\Core\Security\Encryptor;
@@ -45,6 +46,28 @@ final class RosterController
             'overview' => $repository->weekOverview($user, $week, $year),
             'periods' => $this->periodRanges(),
             'csrfToken' => Csrf::token(),
+        ]));
+    }
+
+    public function exportPdf(Request $request): Response
+    {
+        $user = AuthSession::userContext();
+
+        if (!$user) {
+            return Response::redirect('/login');
+        }
+
+        $repository = new RosterWeekRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
+        $year = $request->string('jaar') !== '' ? (int) $request->string('jaar') : (int) date('o');
+        $week = $request->string('week') !== '' ? (int) $request->string('week') : $repository->defaultWeek($user);
+        $week = max(1, min(53, $week));
+
+        return Response::html(View::render('pages/rosters/pdf', [
+            'overview' => $repository->weekOverview($user, $week, $year),
+            'periods' => $this->periodRanges(),
+            'week' => $week,
+            'year' => $year,
+            'generatedAt' => date('d-m-Y H:i'),
         ]));
     }
 

@@ -68,6 +68,7 @@ return static function (Router $router): void {
         return Response::redirect('/profiel');
     }, $authRequired);
     $router->get('/rooster', [$rosters, 'index'], $authRequired);
+    $router->get('/rooster/export/pdf', [$rosters, 'exportPdf'], $authRequired);
     $router->get('/roosters/genereren', [$rosters, 'generate'], $rosterGenerateRequired);
     $router->post('/roosters/genereren', [$rosters, 'generate'], $rosterGenerateRequired);
     $router->post('/roosters/lessen/verplaats', [$rosters, 'moveLesson'], $rosterGenerateRequired);

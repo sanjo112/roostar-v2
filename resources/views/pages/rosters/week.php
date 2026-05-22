@@ -90,6 +90,7 @@ $yearOptions = range(max(2020, (int) $year - 3), min(2035, (int) $year + 5));
               <button class="icon-btn" type="button" data-roster-next aria-label="Volgende">&gt;</button>
             </span>
           </div>
+          <a class="btn btn-outline" href="/rooster/export/pdf?week=<?= (int) $week ?>&jaar=<?= (int) $year ?>" target="_blank" rel="noopener">PDF export</a>
         </div>
       </div>
 
