@@ -46,7 +46,7 @@
               <select class="form-select" name="periode_id" required>
                 <?php foreach (($periods ?? []) as $period): ?>
                   <option value="<?= htmlspecialchars((string) $period['id']) ?>" <?= (string) $period['id'] === (string) $selectedPeriodId ? 'selected' : '' ?>>
-                    <?= htmlspecialchars((string) $period['schooljaar_naam']) ?> · <?= htmlspecialchars((string) $period['naam']) ?> · wk <?= htmlspecialchars((string) $period['week_van']) ?>-<?= htmlspecialchars((string) $period['week_tot']) ?>
+                    <?= htmlspecialchars((string) $period['schooljaar_naam']) ?> · <?= htmlspecialchars((string) $period['naam']) ?> · <?= htmlspecialchars((string) ($period['week_van_jaar'] ?? '')) ?> wk <?= htmlspecialchars((string) $period['week_van']) ?> - <?= htmlspecialchars((string) ($period['week_tot_jaar'] ?? '')) ?> wk <?= htmlspecialchars((string) $period['week_tot']) ?>
                   </option>
                 <?php endforeach; ?>
               </select>

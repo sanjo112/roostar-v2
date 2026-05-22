@@ -44,13 +44,15 @@ final class RosterDataRepository
             SELECT
                 sp.*,
                 sj.naam AS schooljaar_naam,
+                sj.startdatum AS schooljaar_startdatum,
+                sj.einddatum AS schooljaar_einddatum,
                 sj.school_id,
                 s.naam_encrypted AS school_naam_encrypted
             FROM schooljaar_periodes sp
             INNER JOIN schooljaren sj ON sj.id = sp.schooljaar_id
             INNER JOIN scholen s ON s.id = sj.school_id
             WHERE {$scopeSql}
-            ORDER BY sj.startdatum DESC, sp.week_van, sp.naam
+            ORDER BY sj.startdatum DESC, COALESCE(sp.week_van_jaar, YEAR(sj.startdatum)), sp.week_van, sp.naam
         ");
         $stmt->execute($params);
 
@@ -314,53 +316,74 @@ final class RosterDataRepository
         ]);
     }
 
-    public function createPeriod(string $schoolYearId, string $schoolId, string $name, int $weekFrom, int $weekTo): void
+    public function createPeriod(string $schoolYearId, string $schoolId, string $name, int $weekFrom, int $weekTo, ?int $weekFromYear = null, ?int $weekToYear = null): void
     {
         if (!$this->schoolYearBelongsToSchool($schoolYearId, $schoolId)) {
             throw new \InvalidArgumentException('Kies een schooljaar van dezelfde school.');
         }
 
-        $this->assertValidPeriodWeeks($weekFrom, $weekTo);
+        [$weekFromYear, $weekToYear] = $this->normalizePeriodWeekYears($schoolYearId, $weekFrom, $weekTo, $weekFromYear, $weekToYear);
 
-        $stmt = $this->db->prepare("
-            INSERT INTO schooljaar_periodes (id, schooljaar_id, naam, week_van, week_tot, active, created_at, updated_at)
-            VALUES (:id, :schooljaar_id, :naam, :week_van, :week_tot, 1, NOW(), NOW())
-        ");
-        $stmt->execute([
+        $columns = "id, schooljaar_id, naam, week_van, week_tot, active, created_at, updated_at";
+        $values = ":id, :schooljaar_id, :naam, :week_van, :week_tot, 1, NOW(), NOW()";
+        $params = [
             'id' => Str::uuid(),
             'schooljaar_id' => $schoolYearId,
             'naam' => $name,
             'week_van' => $weekFrom,
             'week_tot' => $weekTo,
-        ]);
+        ];
+
+        if ($this->hasPeriodWeekYearColumns()) {
+            $columns = "id, schooljaar_id, naam, week_van, week_van_jaar, week_tot, week_tot_jaar, active, created_at, updated_at";
+            $values = ":id, :schooljaar_id, :naam, :week_van, :week_van_jaar, :week_tot, :week_tot_jaar, 1, NOW(), NOW()";
+            $params['week_van_jaar'] = $weekFromYear;
+            $params['week_tot_jaar'] = $weekToYear;
+        }
+
+        $stmt = $this->db->prepare("
+            INSERT INTO schooljaar_periodes ({$columns})
+            VALUES ({$values})
+        ");
+        $stmt->execute($params);
     }
 
-    public function updatePeriod(string $periodId, string $schoolYearId, string $schoolId, string $name, int $weekFrom, int $weekTo, bool $active): void
+    public function updatePeriod(string $periodId, string $schoolYearId, string $schoolId, string $name, int $weekFrom, int $weekTo, bool $active, ?int $weekFromYear = null, ?int $weekToYear = null): void
     {
         if (!$this->periodBelongsToSchoolYear($periodId, $schoolYearId, $schoolId)) {
             throw new \InvalidArgumentException('Kies een periode van hetzelfde schooljaar.');
         }
 
-        $this->assertValidPeriodWeeks($weekFrom, $weekTo);
-
-        $stmt = $this->db->prepare("
-            UPDATE schooljaar_periodes
-            SET naam = :naam,
-                week_van = :week_van,
-                week_tot = :week_tot,
-                active = :active,
-                updated_at = NOW()
-            WHERE id = :id
-              AND schooljaar_id = :schooljaar_id
-        ");
-        $stmt->execute([
+        [$weekFromYear, $weekToYear] = $this->normalizePeriodWeekYears($schoolYearId, $weekFrom, $weekTo, $weekFromYear, $weekToYear);
+        $yearSql = $this->hasPeriodWeekYearColumns() ? ",
+                week_van_jaar = :week_van_jaar,
+                week_tot_jaar = :week_tot_jaar" : '';
+        $params = [
             'id' => $periodId,
             'schooljaar_id' => $schoolYearId,
             'naam' => $name,
             'week_van' => $weekFrom,
             'week_tot' => $weekTo,
             'active' => $active ? 1 : 0,
-        ]);
+        ];
+
+        if ($this->hasPeriodWeekYearColumns()) {
+            $params['week_van_jaar'] = $weekFromYear;
+            $params['week_tot_jaar'] = $weekToYear;
+        }
+
+        $stmt = $this->db->prepare("
+            UPDATE schooljaar_periodes
+            SET naam = :naam,
+                week_van = :week_van,
+                week_tot = :week_tot
+                {$yearSql},
+                active = :active,
+                updated_at = NOW()
+            WHERE id = :id
+              AND schooljaar_id = :schooljaar_id
+        ");
+        $stmt->execute($params);
     }
 
     public function deletePeriod(string $periodId, string $schoolYearId, string $schoolId): void
@@ -1114,6 +1137,93 @@ final class RosterDataRepository
             throw new \InvalidArgumentException('Weeknummers moeten tussen 1 en 53 liggen.');
         }
 
+    }
+
+    private function normalizePeriodWeekYears(string $schoolYearId, int $weekFrom, int $weekTo, ?int $weekFromYear, ?int $weekToYear): array
+    {
+        $this->assertValidPeriodWeeks($weekFrom, $weekTo);
+        $options = $this->weekIndexMapForSchoolYear($schoolYearId);
+
+        if ($weekFromYear === null || $weekToYear === null) {
+            $years = $this->inferPeriodYears($schoolYearId, $weekFrom, $weekTo);
+            $weekFromYear ??= $years[0];
+            $weekToYear ??= $years[1];
+        }
+
+        $fromKey = sprintf('%04d-%02d', $weekFromYear, $weekFrom);
+        $toKey = sprintf('%04d-%02d', $weekToYear, $weekTo);
+
+        if (!isset($options[$fromKey], $options[$toKey])) {
+            throw new \InvalidArgumentException('Kies weken die binnen het schooljaar vallen.');
+        }
+
+        if ($options[$fromKey] > $options[$toKey]) {
+            throw new \InvalidArgumentException('De eindweek moet na de startweek liggen binnen het schooljaar.');
+        }
+
+        return [$weekFromYear, $weekToYear];
+    }
+
+    private function inferPeriodYears(string $schoolYearId, int $weekFrom, int $weekTo): array
+    {
+        $schoolYear = $this->schoolYearDates($schoolYearId);
+        $startWeek = (int) (new \DateTimeImmutable((string) $schoolYear['startdatum']))->format('W');
+        $startYear = (int) (new \DateTimeImmutable((string) $schoolYear['startdatum']))->format('o');
+        $endYear = (int) (new \DateTimeImmutable((string) $schoolYear['einddatum']))->format('o');
+
+        return [
+            $weekFrom >= $startWeek ? $startYear : $endYear,
+            $weekTo >= $startWeek ? $startYear : $endYear,
+        ];
+    }
+
+    private function weekIndexMapForSchoolYear(string $schoolYearId): array
+    {
+        $schoolYear = $this->schoolYearDates($schoolYearId);
+        $start = new \DateTimeImmutable((string) $schoolYear['startdatum']);
+        $end = new \DateTimeImmutable((string) $schoolYear['einddatum']);
+        $cursor = $start->setISODate((int) $start->format('o'), (int) $start->format('W'), 1);
+        $last = $end->setISODate((int) $end->format('o'), (int) $end->format('W'), 1);
+        $weeks = [];
+        $index = 0;
+
+        while ($cursor <= $last) {
+            $weeks[$cursor->format('o-W')] = $index++;
+            $cursor = $cursor->modify('+1 week');
+        }
+
+        return $weeks;
+    }
+
+    private function schoolYearDates(string $schoolYearId): array
+    {
+        $stmt = $this->db->prepare("SELECT startdatum, einddatum FROM schooljaren WHERE id = :id LIMIT 1");
+        $stmt->execute(['id' => $schoolYearId]);
+        $row = $stmt->fetch();
+
+        if (!is_array($row)) {
+            throw new \InvalidArgumentException('Schooljaar niet gevonden.');
+        }
+
+        return $row;
+    }
+
+    private function hasPeriodWeekYearColumns(): bool
+    {
+        static $exists = null;
+
+        if ($exists !== null) {
+            return $exists;
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM schooljaar_periodes LIKE 'week_van_jaar'");
+            $exists = (bool) $stmt->fetch();
+        } catch (\Throwable) {
+            $exists = false;
+        }
+
+        return $exists;
     }
 
     private function schoolScopeSql(UserContext $user, string $schoolAlias): array

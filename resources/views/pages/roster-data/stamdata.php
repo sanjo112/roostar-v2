@@ -14,6 +14,45 @@ foreach (array_keys($teacherDays) as $teacherDayKey) {
         $allTeacherSlots[] = $teacherDayKey . '-' . $teacherPeriod;
     }
 }
+$weekOptionsForSchoolYear = static function (array $schoolYear): array {
+    $start = new DateTimeImmutable((string) $schoolYear['startdatum']);
+    $end = new DateTimeImmutable((string) $schoolYear['einddatum']);
+    $cursor = $start->setISODate((int) $start->format('o'), (int) $start->format('W'), 1);
+    $last = $end->setISODate((int) $end->format('o'), (int) $end->format('W'), 1);
+    $options = [];
+
+    while ($cursor <= $last) {
+        $year = (int) $cursor->format('o');
+        $week = (int) $cursor->format('W');
+        $options[] = [
+            'key' => sprintf('%04d-%02d', $year, $week),
+            'label' => $year . ' · week ' . $week,
+            'year' => $year,
+            'week' => $week,
+        ];
+        $cursor = $cursor->modify('+1 week');
+    }
+
+    return $options;
+};
+$periodWeekKey = static function (array $period, string $side, array $schoolYear): string {
+    $week = (int) ($period['week_' . $side] ?? 0);
+    $year = (int) ($period['week_' . $side . '_jaar'] ?? 0);
+
+    if ($year <= 0) {
+        $start = new DateTimeImmutable((string) $schoolYear['startdatum']);
+        $end = new DateTimeImmutable((string) $schoolYear['einddatum']);
+        $startWeek = (int) $start->format('W');
+        $year = $week >= $startWeek ? (int) $start->format('o') : (int) $end->format('o');
+    }
+
+    return sprintf('%04d-%02d', $year, $week);
+};
+$periodWeekLabel = static function (array $period, string $side, array $schoolYear) use ($periodWeekKey): string {
+    [$year, $week] = explode('-', $periodWeekKey($period, $side, $schoolYear), 2);
+
+    return $year . ' wk ' . (int) $week;
+};
 ?>
 
 <section class="card overview-card">
@@ -119,7 +158,11 @@ foreach (array_keys($teacherDays) as $teacherDayKey) {
               <td>
                 <div class="inline-pill-list">
                   <?php foreach ($schoolYearPeriods as $period): ?>
-                    <span class="soft-pill"><?= htmlspecialchars((string) $period['naam']) ?> · wk <?= htmlspecialchars((string) $period['week_van']) ?>-<?= htmlspecialchars((string) $period['week_tot']) ?></span>
+                    <span class="soft-pill">
+                      <?= htmlspecialchars((string) $period['naam']) ?> ·
+                      <?= htmlspecialchars($periodWeekLabel($period, 'van', $schoolYear)) ?> -
+                      <?= htmlspecialchars($periodWeekLabel($period, 'tot', $schoolYear)) ?>
+                    </span>
                   <?php endforeach; ?>
                   <?php if ($schoolYearPeriods === []): ?>
                     <span class="muted">Geen periodes</span>
@@ -197,6 +240,7 @@ foreach (array_keys($teacherDays) as $teacherDayKey) {
 
   <?php foreach (($schoolYears ?? []) as $schoolYear): ?>
     <?php $schoolYearPeriods = $periodsBySchoolYear[(string) $schoolYear['id']] ?? []; ?>
+    <?php $schoolYearWeekOptions = $weekOptionsForSchoolYear($schoolYear); ?>
     <div id="period-manage-<?= htmlspecialchars((string) $schoolYear['id']) ?>" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="period-manage-title-<?= htmlspecialchars((string) $schoolYear['id']) ?>" hidden>
       <div class="modal modal-xl app-modal">
         <div class="modal-head">
@@ -214,8 +258,8 @@ foreach (array_keys($teacherDays) as $teacherDayKey) {
               <?php if ($schoolYearPeriods !== []): ?>
                 <div class="period-manager-head">
                   <span>Periode</span>
-                  <span>Week van</span>
-                  <span>Week tot</span>
+                  <span>Van</span>
+                  <span>Tot en met</span>
                   <span>Status</span>
                   <span>Acties</span>
                 </div>
@@ -232,11 +276,23 @@ foreach (array_keys($teacherDays) as $teacherDayKey) {
                   </div>
                   <div class="form-group">
                     <label class="form-label sr-only">Week van</label>
-                    <input class="form-input" type="number" name="week_van" min="1" max="53" value="<?= (int) $period['week_van'] ?>" required>
+                    <select class="form-select" name="week_van_key" required>
+                      <?php foreach ($schoolYearWeekOptions as $weekOption): ?>
+                        <option value="<?= htmlspecialchars((string) $weekOption['key']) ?>" <?= $weekOption['key'] === $periodWeekKey($period, 'van', $schoolYear) ? 'selected' : '' ?>>
+                          <?= htmlspecialchars((string) $weekOption['label']) ?>
+                        </option>
+                      <?php endforeach; ?>
+                    </select>
                   </div>
                   <div class="form-group">
                     <label class="form-label sr-only">Week tot</label>
-                    <input class="form-input" type="number" name="week_tot" min="1" max="53" value="<?= (int) $period['week_tot'] ?>" required>
+                    <select class="form-select" name="week_tot_key" required>
+                      <?php foreach ($schoolYearWeekOptions as $weekOption): ?>
+                        <option value="<?= htmlspecialchars((string) $weekOption['key']) ?>" <?= $weekOption['key'] === $periodWeekKey($period, 'tot', $schoolYear) ? 'selected' : '' ?>>
+                          <?= htmlspecialchars((string) $weekOption['label']) ?>
+                        </option>
+                      <?php endforeach; ?>
+                    </select>
                   </div>
                   <label class="period-active-toggle">
                     <input type="hidden" name="active" value="0">
@@ -274,11 +330,21 @@ foreach (array_keys($teacherDays) as $teacherDayKey) {
                 </div>
                 <div class="form-group">
                   <label class="form-label sr-only">Week van</label>
-                  <input class="form-input" type="number" name="week_van" min="1" max="53" required>
+                  <select class="form-select" name="week_van_key" required>
+                    <option value="">Van</option>
+                    <?php foreach ($schoolYearWeekOptions as $weekOption): ?>
+                      <option value="<?= htmlspecialchars((string) $weekOption['key']) ?>"><?= htmlspecialchars((string) $weekOption['label']) ?></option>
+                    <?php endforeach; ?>
+                  </select>
                 </div>
                 <div class="form-group">
                   <label class="form-label sr-only">Week tot</label>
-                  <input class="form-input" type="number" name="week_tot" min="1" max="53" required>
+                  <select class="form-select" name="week_tot_key" required>
+                    <option value="">Tot en met</option>
+                    <?php foreach ($schoolYearWeekOptions as $weekOption): ?>
+                      <option value="<?= htmlspecialchars((string) $weekOption['key']) ?>"><?= htmlspecialchars((string) $weekOption['label']) ?></option>
+                    <?php endforeach; ?>
+                  </select>
                 </div>
                 <button class="btn btn-dark btn-sm" type="submit">Toevoegen</button>
               </div>

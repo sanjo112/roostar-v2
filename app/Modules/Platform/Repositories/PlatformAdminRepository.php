@@ -23,13 +23,16 @@ final class PlatformAdminRepository
 
     public function customers(): array
     {
+        $hasArchiveColumns = $this->hasArchiveColumns();
+        $activeSelect = $hasArchiveColumns ? 's.active, s.archived_at,' : '1 AS active, NULL AS archived_at,';
+        $orderSql = $hasArchiveColumns ? 's.active DESC, s.created_at DESC' : 's.created_at DESC';
+
         $stmt = $this->db->query("
             SELECT
                 s.id,
                 s.scholengroep_id,
                 s.naam_encrypted AS school_naam_encrypted,
-                s.active,
-                s.archived_at,
+                {$activeSelect}
                 s.created_at,
                 sg.naam_encrypted AS groep_naam_encrypted,
                 COUNT(DISTINCT u.id) AS gebruikers_count,
@@ -38,7 +41,7 @@ final class PlatformAdminRepository
             INNER JOIN scholengroepen sg ON sg.id = s.scholengroep_id
             LEFT JOIN users u ON u.school_id = s.id
             GROUP BY s.id
-            ORDER BY s.active DESC, s.created_at DESC
+            ORDER BY {$orderSql}
         ");
 
         return array_map(fn (array $row): array => [
@@ -134,6 +137,10 @@ final class PlatformAdminRepository
 
     public function archiveCustomer(string $schoolId): void
     {
+        if (!$this->hasArchiveColumns()) {
+            throw new \InvalidArgumentException('Draai eerst de database migraties voordat je klanten archiveert.');
+        }
+
         if (!$this->schoolExists($schoolId)) {
             throw new \InvalidArgumentException('School niet gevonden.');
         }
@@ -150,6 +157,10 @@ final class PlatformAdminRepository
 
     public function restoreCustomer(string $schoolId): void
     {
+        if (!$this->hasArchiveColumns()) {
+            throw new \InvalidArgumentException('Draai eerst de database migraties voordat je klanten heractiveert.');
+        }
+
         if (!$this->schoolExists($schoolId, false)) {
             throw new \InvalidArgumentException('School niet gevonden.');
         }
@@ -199,7 +210,7 @@ final class PlatformAdminRepository
     private function schoolExists(string $schoolId, bool $activeOnly = true): bool
     {
         $sql = "SELECT 1 FROM scholen WHERE id = :id";
-        if ($activeOnly) {
+        if ($activeOnly && $this->hasArchiveColumns()) {
             $sql .= " AND active = 1";
         }
 
@@ -207,6 +218,24 @@ final class PlatformAdminRepository
         $stmt->execute(['id' => $schoolId]);
 
         return (bool) $stmt->fetchColumn();
+    }
+
+    private function hasArchiveColumns(): bool
+    {
+        static $exists = null;
+
+        if ($exists !== null) {
+            return $exists;
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM scholen LIKE 'active'");
+            $exists = (bool) $stmt->fetch();
+        } catch (\Throwable) {
+            $exists = false;
+        }
+
+        return $exists;
     }
 
     private function decrypt(string $value): string

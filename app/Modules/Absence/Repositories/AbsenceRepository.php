@@ -132,7 +132,7 @@ final class AbsenceRepository
         $lessons = [];
 
         foreach ($dateMap as $date => $dateInfo) {
-            $period = $this->periodForWeek((string) $absence['school_id'], (int) $dateInfo['week']);
+            $period = $this->periodForWeek((string) $absence['school_id'], (int) $dateInfo['week'], (int) $dateInfo['year']);
 
             if ($period === null) {
                 continue;
@@ -463,7 +463,7 @@ final class AbsenceRepository
         return is_array($row) ? $row : null;
     }
 
-    private function periodForWeek(string $schoolId, int $week): ?array
+    private function periodForWeek(string $schoolId, int $week, int $year): ?array
     {
         $stmt = $this->db->prepare("
             SELECT sp.*
@@ -471,18 +471,16 @@ final class AbsenceRepository
             INNER JOIN schooljaren sj ON sj.id = sp.schooljaar_id
             WHERE sj.school_id = :school_id
               AND sp.active = 1
-              AND (
-                  (sp.week_van <= sp.week_tot AND :week_between BETWEEN sp.week_van AND sp.week_tot)
-                  OR (sp.week_van > sp.week_tot AND (:week_after >= sp.week_van OR :week_before <= sp.week_tot))
-              )
-            ORDER BY sp.week_van
+              AND ((COALESCE(sp.week_van_jaar, YEAR(sj.startdatum)) * 100) + sp.week_van) <= :week_key_from
+              AND ((COALESCE(sp.week_tot_jaar, YEAR(sj.einddatum)) * 100) + sp.week_tot) >= :week_key_to
+            ORDER BY COALESCE(sp.week_van_jaar, YEAR(sj.startdatum)), sp.week_van
             LIMIT 1
         ");
+        $weekKey = ($year * 100) + $week;
         $stmt->execute([
             'school_id' => $schoolId,
-            'week_between' => $week,
-            'week_after' => $week,
-            'week_before' => $week,
+            'week_key_from' => $weekKey,
+            'week_key_to' => $weekKey,
         ]);
         $row = $stmt->fetch();
 
@@ -509,6 +507,7 @@ final class AbsenceRepository
 
             $map[$date->format('Y-m-d')] = [
                 'week' => (int) $date->format('W'),
+                'year' => (int) $date->format('o'),
                 'day' => self::DAY_BY_ISO[$isoDay],
             ];
         }

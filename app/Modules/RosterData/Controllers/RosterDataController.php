@@ -109,8 +109,8 @@ final class RosterDataController
         return $this->store($request, '/stamdata?tab=schooljaren', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
             $schoolYearId = $request->string('schooljaar_id');
             $name = $request->string('naam');
-            $weekFrom = $request->string('week_van') !== '' ? (int) $request->string('week_van') : 0;
-            $weekTo = $request->string('week_tot') !== '' ? (int) $request->string('week_tot') : 0;
+            [$weekFromYear, $weekFrom] = $this->weekSelection($request, 'week_van');
+            [$weekToYear, $weekTo] = $this->weekSelection($request, 'week_tot');
 
             if ($schoolYearId === '') {
                 throw new \InvalidArgumentException('Kies eerst een schooljaar.');
@@ -120,7 +120,7 @@ final class RosterDataController
                 throw new \InvalidArgumentException('Vul een periodenaam in.');
             }
 
-            $repository->createPeriod($schoolYearId, $schoolId, $name, $weekFrom, $weekTo);
+            $repository->createPeriod($schoolYearId, $schoolId, $name, $weekFrom, $weekTo, $weekFromYear, $weekToYear);
             NotificationBag::success('Periode is toegevoegd.');
         }, 'roster_data.period_created');
     }
@@ -131,8 +131,8 @@ final class RosterDataController
             $periodId = $request->string('periode_id');
             $schoolYearId = $request->string('schooljaar_id');
             $name = $request->string('naam');
-            $weekFrom = $request->string('week_van') !== '' ? (int) $request->string('week_van') : 0;
-            $weekTo = $request->string('week_tot') !== '' ? (int) $request->string('week_tot') : 0;
+            [$weekFromYear, $weekFrom] = $this->weekSelection($request, 'week_van');
+            [$weekToYear, $weekTo] = $this->weekSelection($request, 'week_tot');
 
             if ($periodId === '' || $schoolYearId === '') {
                 throw new \InvalidArgumentException('Kies eerst een periode.');
@@ -142,7 +142,7 @@ final class RosterDataController
                 throw new \InvalidArgumentException('Vul een periodenaam in.');
             }
 
-            $repository->updatePeriod($periodId, $schoolYearId, $schoolId, $name, $weekFrom, $weekTo, $request->string('active') === '1');
+            $repository->updatePeriod($periodId, $schoolYearId, $schoolId, $name, $weekFrom, $weekTo, $request->string('active') === '1', $weekFromYear, $weekToYear);
             NotificationBag::success('Periode is bijgewerkt.');
         }, 'roster_data.period_updated');
     }
@@ -555,6 +555,19 @@ final class RosterDataController
         $value = $request->input($key, []);
 
         return is_array($value) ? $value : [];
+    }
+
+    private function weekSelection(Request $request, string $key): array
+    {
+        $selected = $request->string($key . '_key');
+        if (preg_match('/^(\d{4})-(\d{1,2})$/', $selected, $matches) === 1) {
+            return [(int) $matches[1], (int) $matches[2]];
+        }
+
+        return [
+            $request->string($key . '_jaar') !== '' ? (int) $request->string($key . '_jaar') : null,
+            $request->string($key) !== '' ? (int) $request->string($key) : 0,
+        ];
     }
 
     private function hoursPerWeekFromSlots(array $availableSlots): int

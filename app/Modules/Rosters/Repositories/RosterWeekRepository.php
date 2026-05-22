@@ -23,8 +23,9 @@ final class RosterWeekRepository
     public function defaultWeek(UserContext $user): int
     {
         $week = (int) date('W');
+        $year = (int) date('o');
 
-        if ($this->periodForWeek($user, $week) !== null) {
+        if ($this->periodForWeek($user, $week, $year) !== null) {
             return $week;
         }
 
@@ -36,7 +37,7 @@ final class RosterWeekRepository
             INNER JOIN scholen s ON s.id = sj.school_id
             INNER JOIN roosters r ON r.periode_id = sp.id
             WHERE {$scopeSql}
-            ORDER BY sp.week_van
+            ORDER BY COALESCE(sp.week_van_jaar, YEAR(sj.startdatum)), sp.week_van
             LIMIT 1
         ");
         $stmt->execute($params);
@@ -47,7 +48,7 @@ final class RosterWeekRepository
 
     public function weekOverview(UserContext $user, int $week, int $year): array
     {
-        $period = $this->periodForWeek($user, $week);
+        $period = $this->periodForWeek($user, $week, $year);
         $dates = $this->weekDates($week, $year);
 
         if ($period === null) {
@@ -133,7 +134,7 @@ final class RosterWeekRepository
         ];
     }
 
-    private function periodForWeek(UserContext $user, int $week): ?array
+    private function periodForWeek(UserContext $user, int $week, int $year): ?array
     {
         [$scopeSql, $params] = $this->schoolScopeSql($user, 's');
         $stmt = $this->db->prepare("
@@ -143,18 +144,16 @@ final class RosterWeekRepository
             INNER JOIN scholen s ON s.id = sj.school_id
             WHERE {$scopeSql}
               AND sp.active = 1
-              AND (
-                  (sp.week_van <= sp.week_tot AND :week_between BETWEEN sp.week_van AND sp.week_tot)
-                  OR (sp.week_van > sp.week_tot AND (:week_after >= sp.week_van OR :week_before <= sp.week_tot))
-              )
-            ORDER BY sp.week_van
+              AND ((COALESCE(sp.week_van_jaar, YEAR(sj.startdatum)) * 100) + sp.week_van) <= :week_key_from
+              AND ((COALESCE(sp.week_tot_jaar, YEAR(sj.einddatum)) * 100) + sp.week_tot) >= :week_key_to
+            ORDER BY COALESCE(sp.week_van_jaar, YEAR(sj.startdatum)), sp.week_van
             LIMIT 1
         ");
+        $weekKey = ($year * 100) + $week;
         $stmt->execute([
             ...$params,
-            'week_between' => $week,
-            'week_after' => $week,
-            'week_before' => $week,
+            'week_key_from' => $weekKey,
+            'week_key_to' => $weekKey,
         ]);
         $row = $stmt->fetch();
 

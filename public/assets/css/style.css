@@ -1350,7 +1350,7 @@ body.has-modal-open {
 }
 .period-manager-head {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 96px 96px 104px minmax(170px, auto);
+  grid-template-columns: minmax(170px, 1fr) minmax(150px, .8fr) minmax(150px, .8fr) 104px minmax(170px, auto);
   gap: 8px;
   padding: 0 6px;
   color: var(--muted);
@@ -1361,7 +1361,7 @@ body.has-modal-open {
 }
 .period-manager-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 96px 96px 104px minmax(170px, auto);
+  grid-template-columns: minmax(170px, 1fr) minmax(150px, .8fr) minmax(150px, .8fr) 104px minmax(170px, auto);
   gap: 8px;
   align-items: center;
   padding: 8px;
@@ -1417,12 +1417,14 @@ body.has-modal-open {
 }
 .period-manager-create-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 96px 96px auto;
+  grid-template-columns: minmax(170px, 1fr) minmax(150px, .8fr) minmax(150px, .8fr) auto;
   gap: 8px;
   align-items: center;
 }
 .period-manager-row .form-input,
-.period-manager-create-grid .form-input {
+.period-manager-row .form-select,
+.period-manager-create-grid .form-input,
+.period-manager-create-grid .form-select {
   height: 38px;
   min-height: 38px;
   border-radius: 7px;
