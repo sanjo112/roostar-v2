@@ -100,6 +100,7 @@ return static function (Router $router): void {
     $router->post('/lokalen', [$rosterData, 'storeRoom'], $authRequired);
     $router->post('/lokalen/bewerk', [$rosterData, 'updateRoom'], $authRequired);
     $router->post('/lokalen/kopieer', [$rosterData, 'copyRoom'], $authRequired);
+    $router->post('/lokalen/verwijder', [$rosterData, 'deleteRoom'], $authRequired);
     $router->get('/leraren', [$rosterData, 'teachers'], $authRequired);
     $router->post('/leraren', [$rosterData, 'storeTeacher'], $authRequired);
     $router->post('/leraren/bewerk', [$rosterData, 'updateTeacher'], $authRequired);

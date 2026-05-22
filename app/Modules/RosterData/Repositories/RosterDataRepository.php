@@ -890,6 +890,22 @@ final class RosterDataRepository
         $this->syncRoomSubjects($copiedRoomId, $schoolId, $subjectIds);
     }
 
+    public function deleteRoom(string $roomId, string $schoolId): void
+    {
+        if (!$this->encryptedRowBelongsToSchool('lokalen', $roomId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een lokaal van dezelfde school.');
+        }
+
+        $stmt = $this->db->prepare("DELETE FROM lokaal_vakken WHERE lokaal_id = :lokaal_id");
+        $stmt->execute(['lokaal_id' => $roomId]);
+
+        $stmt = $this->db->prepare("DELETE FROM lokalen WHERE id = :id AND school_id = :school_id");
+        $stmt->execute([
+            'id' => $roomId,
+            'school_id' => $schoolId,
+        ]);
+    }
+
     private function encryptedRowsFor(UserContext $user, string $table, string $alias, string $select, string $order): array
     {
         [$scopeSql, $params] = $this->schoolScopeSql($user, 's');

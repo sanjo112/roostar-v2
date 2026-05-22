@@ -1471,12 +1471,12 @@ body.has-modal-open {
 .location-manager-head,
 .location-manager-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 110px 110px minmax(170px, auto);
-  gap: 8px;
+  grid-template-columns: minmax(260px, 1fr) 124px 124px minmax(210px, auto);
+  gap: 10px;
   align-items: center;
 }
 .location-manager-head {
-  padding: 0 6px;
+  padding: 0 12px 2px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 750;
@@ -1484,7 +1484,7 @@ body.has-modal-open {
   text-transform: uppercase;
 }
 .location-manager-row {
-  padding: 8px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -1495,8 +1495,8 @@ body.has-modal-open {
 }
 .location-manager-create-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 110px auto;
-  gap: 8px;
+  grid-template-columns: minmax(260px, 1fr) 124px auto;
+  gap: 10px;
   align-items: center;
 }
 .location-manager-row .form-input,
@@ -1504,6 +1504,14 @@ body.has-modal-open {
   height: 38px;
   min-height: 38px;
   border-radius: 7px;
+}
+.location-manager-row .period-active-toggle,
+.location-manager-create-grid .period-active-toggle {
+  justify-content: center;
+  width: 100%;
+}
+.location-manager-row .period-manager-actions {
+  justify-content: flex-end;
 }
 .danger-soft {
   color: var(--coral);

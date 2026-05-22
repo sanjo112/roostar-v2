@@ -445,6 +445,20 @@ final class RosterDataController
         }, 'roster_data.room_copied');
     }
 
+    public function deleteRoom(Request $request): Response
+    {
+        return $this->store($request, '/stamdata?tab=lokalen', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+            $roomId = $request->string('lokaal_id');
+
+            if ($roomId === '') {
+                throw new \InvalidArgumentException('Kies eerst een lokaal.');
+            }
+
+            $repository->deleteRoom($roomId, $schoolId);
+            NotificationBag::success('Lokaal is verwijderd.');
+        }, 'roster_data.room_deleted');
+    }
+
     public function storeLocation(Request $request): Response
     {
         return $this->store($request, '/stamdata?tab=lokalen', function (RosterDataRepository $repository, string $schoolId) use ($request): void {

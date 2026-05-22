@@ -920,14 +920,12 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
       <div class="modal-body">
         <div class="period-manager">
           <div class="period-manager-list">
-            <?php if (!empty($locations)): ?>
-              <div class="location-manager-head">
-                <span>Locatie</span>
-                <span>Type</span>
-                <span>Status</span>
-                <span>Acties</span>
-              </div>
-            <?php endif; ?>
+            <div class="location-manager-head">
+              <span>Locatie</span>
+              <span>Type</span>
+              <span>Status</span>
+              <span>Acties</span>
+            </div>
             <?php foreach (($locations ?? []) as $location): ?>
               <form method="post" action="/locaties/bewerk" class="location-manager-row">
                 <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
@@ -1137,6 +1135,12 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
                     <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $room['school_id']) ?>">
                     <input type="hidden" name="lokaal_id" value="<?= htmlspecialchars((string) $room['id']) ?>">
                     <button class="btn btn-outline btn-sm" type="submit">Kopiëren</button>
+                  </form>
+                  <form method="post" action="/lokalen/verwijder">
+                    <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                    <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $room['school_id']) ?>">
+                    <input type="hidden" name="lokaal_id" value="<?= htmlspecialchars((string) $room['id']) ?>">
+                    <button class="btn btn-ghost btn-sm btn-danger-link" type="submit">Verwijderen</button>
                   </form>
                 </div>
               </td>
