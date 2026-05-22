@@ -845,24 +845,72 @@ final class RosterDataController
         $encryptor = new Encryptor($_ENV['ENCRYPTION_KEY'] ?? '');
         $repository = new RosterDataRepository($db, $encryptor);
         $schools = (new SchoolRepository($db, $encryptor))->accessibleFor($user);
-
-        return Response::html(AppView::render('roster-data/stamdata', [
+        $data = [
             'activePage' => 'stamdata',
             'pageTitle' => 'Stamdata',
             'activeTab' => $tab,
             'tabs' => self::TABS,
             'csrfToken' => Csrf::token(),
             'schools' => $schools,
-            'schoolYears' => $repository->schoolYearsFor($user),
-            'periods' => $repository->periodsFor($user),
-            'schoolYearBreaks' => $repository->schoolYearBreaksFor($user),
-            'programs' => $repository->programsFor($user),
-            'classes' => $repository->classesFor($user),
-            'subjects' => $repository->subjectsFor($user),
-            'locations' => $repository->locationsFor($user),
-            'rooms' => $repository->roomsFor($user),
-            'teachers' => $repository->teachersFor($user),
-        ]));
+            'schoolYears' => [],
+            'periods' => [],
+            'schoolYearBreaks' => [],
+            'programs' => [],
+            'classes' => [],
+            'subjects' => [],
+            'locations' => [],
+            'rooms' => [],
+            'teachers' => [],
+        ];
+
+        $load = fn (string $label, callable $callback): array => $this->loadMasterDataSet($label, $callback);
+
+        if ($tab === 'schooljaren') {
+            $data['schoolYears'] = $load('schooljaren', fn (): array => $repository->schoolYearsFor($user));
+            $data['periods'] = $load('periodes', fn (): array => $repository->periodsFor($user));
+            $data['schoolYearBreaks'] = $load('vrije dagen en vakanties', fn (): array => $repository->schoolYearBreaksFor($user));
+        }
+
+        if ($tab === 'klassen') {
+            $data['schoolYears'] = $load('schooljaren', fn (): array => $repository->schoolYearsFor($user));
+            $data['programs'] = $load('opleidingen', fn (): array => $repository->programsFor($user));
+            $data['classes'] = $load('klassen', fn (): array => $repository->classesFor($user));
+        }
+
+        if ($tab === 'vakken') {
+            $data['subjects'] = $load('vakken', fn (): array => $repository->subjectsFor($user));
+        }
+
+        if ($tab === 'lokalen') {
+            $data['locations'] = $load('locaties', fn (): array => $repository->locationsFor($user));
+            $data['rooms'] = $load('lokalen', fn (): array => $repository->roomsFor($user));
+            $data['subjects'] = $load('vakken', fn (): array => $repository->subjectsFor($user));
+        }
+
+        if ($tab === 'opleidingen') {
+            $data['programs'] = $load('opleidingen', fn (): array => $repository->programsFor($user));
+            $data['subjects'] = $load('vakken', fn (): array => $repository->subjectsFor($user));
+            $data['periods'] = $load('periodes', fn (): array => $repository->periodsFor($user));
+        }
+
+        if ($tab === 'leraren') {
+            $data['teachers'] = $load('leraren', fn (): array => $repository->teachersFor($user));
+            $data['subjects'] = $load('vakken', fn (): array => $repository->subjectsFor($user));
+        }
+
+        return Response::html(AppView::render('roster-data/stamdata', $data));
+    }
+
+    private function loadMasterDataSet(string $label, callable $callback): array
+    {
+        try {
+            return $callback();
+        } catch (\Throwable $exception) {
+            error_log('Stamdata dataset "' . $label . '" kon niet geladen worden: ' . $exception->getMessage());
+            NotificationBag::warning('Stamdata onderdeel "' . $label . '" kon niet worden geladen. Controleer of alle database migraties zijn uitgevoerd.');
+
+            return [];
+        }
     }
 
     private function store(Request $request, string $redirectPath, callable $callback, string $auditAction): Response

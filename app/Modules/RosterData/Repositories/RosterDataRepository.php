@@ -40,6 +40,9 @@ final class RosterDataRepository
     public function periodsFor(UserContext $user): array
     {
         [$scopeSql, $params] = $this->schoolScopeSql($user, 's');
+        $periodOrderSql = $this->hasPeriodWeekYearColumns()
+            ? 'COALESCE(sp.week_van_jaar, YEAR(sj.startdatum)), sp.week_van'
+            : 'sp.week_van';
         $stmt = $this->db->prepare("
             SELECT
                 sp.*,
@@ -52,7 +55,7 @@ final class RosterDataRepository
             INNER JOIN schooljaren sj ON sj.id = sp.schooljaar_id
             INNER JOIN scholen s ON s.id = sj.school_id
             WHERE {$scopeSql}
-            ORDER BY sj.startdatum DESC, COALESCE(sp.week_van_jaar, YEAR(sj.startdatum)), sp.week_van, sp.naam
+            ORDER BY sj.startdatum DESC, {$periodOrderSql}, sp.naam
         ");
         $stmt->execute($params);
 
@@ -64,6 +67,10 @@ final class RosterDataRepository
 
     public function schoolYearBreaksFor(UserContext $user): array
     {
+        if (!$this->tableExists('schooljaar_vrije_dagen')) {
+            return [];
+        }
+
         [$scopeSql, $params] = $this->schoolScopeSql($user, 's');
         $stmt = $this->db->prepare("
             SELECT
@@ -428,6 +435,8 @@ final class RosterDataRepository
 
     public function createSchoolYearBreak(string $schoolYearId, string $schoolId, string $name, string $type, string $startDate, string $endDate): void
     {
+        $this->assertSchoolYearBreaksAvailable();
+
         if (!$this->schoolYearBelongsToSchool($schoolYearId, $schoolId)) {
             throw new \InvalidArgumentException('Kies een schooljaar van dezelfde school.');
         }
@@ -451,6 +460,8 @@ final class RosterDataRepository
 
     public function updateSchoolYearBreak(string $breakId, string $schoolYearId, string $schoolId, string $name, string $type, string $startDate, string $endDate, bool $active): void
     {
+        $this->assertSchoolYearBreaksAvailable();
+
         if (!$this->schoolYearBreakBelongsToSchoolYear($breakId, $schoolYearId, $schoolId)) {
             throw new \InvalidArgumentException('Kies een vrije dag van hetzelfde schooljaar.');
         }
@@ -482,6 +493,8 @@ final class RosterDataRepository
 
     public function deleteSchoolYearBreak(string $breakId, string $schoolYearId, string $schoolId): void
     {
+        $this->assertSchoolYearBreaksAvailable();
+
         if (!$this->schoolYearBreakBelongsToSchoolYear($breakId, $schoolYearId, $schoolId)) {
             throw new \InvalidArgumentException('Kies een vrije dag van hetzelfde schooljaar.');
         }
@@ -632,6 +645,10 @@ final class RosterDataRepository
 
     public function schoolYearBreakBelongsToSchoolYear(string $breakId, string $schoolYearId, string $schoolId): bool
     {
+        if (!$this->tableExists('schooljaar_vrije_dagen')) {
+            return false;
+        }
+
         $stmt = $this->db->prepare("
             SELECT 1
             FROM schooljaar_vrije_dagen svd
@@ -1451,6 +1468,38 @@ final class RosterDataRepository
         }
 
         return $exists;
+    }
+
+    private function assertSchoolYearBreaksAvailable(): void
+    {
+        if (!$this->tableExists('schooljaar_vrije_dagen')) {
+            throw new \InvalidArgumentException('Draai eerst de database migraties voor vrije dagen en vakanties.');
+        }
+    }
+
+    private function tableExists(string $table): bool
+    {
+        static $exists = [];
+
+        if (array_key_exists($table, $exists)) {
+            return $exists[$table];
+        }
+
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = DATABASE()
+                  AND table_name = :table
+                LIMIT 1
+            ");
+            $stmt->execute(['table' => $table]);
+            $exists[$table] = (bool) $stmt->fetchColumn();
+        } catch (\Throwable) {
+            $exists[$table] = false;
+        }
+
+        return $exists[$table];
     }
 
     private function schoolScopeSql(UserContext $user, string $schoolAlias): array

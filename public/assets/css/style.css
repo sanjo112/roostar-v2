@@ -434,33 +434,6 @@ body {
   margin: 0;
   display: inline-flex;
 }
-.csv-tools {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 12px 14px;
-  border-top: 1px solid var(--line);
-  background: #FAFBFE;
-}
-.csv-tool-form {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 0;
-}
-.csv-tool-form .form-select {
-  width: 190px;
-  min-height: 34px;
-}
-.csv-tool-form .form-input[type="file"] {
-  width: 230px;
-  min-height: 34px;
-  padding: 6px 10px;
-  font-size: 12px;
-}
 .user-filter-form {
   display: flex;
   align-items: center;
@@ -2006,6 +1979,10 @@ body.has-modal-open {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.inline-action-form {
+  display: inline-flex;
+  margin: 0;
 }
 .hidden-file-input {
   display: none;

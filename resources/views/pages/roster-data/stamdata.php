@@ -563,6 +563,44 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
     </div>
   </div>
 
+  <div id="class-import-modal" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="class-import-title" hidden>
+    <div class="modal modal-lg app-modal">
+      <div class="modal-head">
+        <div>
+          <div id="class-import-title" class="modal-title">Klassen importeren</div>
+          <div class="muted text-sm">Importeer een CSV met kolommen: naam, schooljaar, opleiding, leerjaar, active.</div>
+        </div>
+        <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <form method="post" action="/klassen/import" enctype="multipart/form-data">
+        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+        <div class="modal-body">
+          <div class="app-modal-grid">
+            <div class="form-group">
+              <label class="form-label">School</label>
+              <select class="form-select" name="school_id" required>
+                <?php if ($singleSchoolId === ''): ?><option value="">Kies school</option><?php endif; ?>
+                <?php foreach ($schools as $school): ?>
+                  <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">CSV bestand</label>
+              <input class="form-input" type="file" name="csv_file" accept=".csv,text/csv" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-outline" type="button" data-close-modal>Annuleren</button>
+          <button class="btn btn-dark" type="submit">Importeren</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <section class="card tasks-card">
     <div class="tasks-head">
       <div>
@@ -570,30 +608,15 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
         <div class="muted text-sm">Alle klassen binnen jouw school- of scholengroep-scope.</div>
       </div>
       <div class="view-actions">
+        <button class="btn btn-outline" type="button" data-open-modal="class-import-modal">Import</button>
+        <form class="inline-action-form" method="get" action="/klassen/export">
+          <?php if ($singleSchoolId !== ''): ?>
+            <input type="hidden" name="school_id" value="<?= htmlspecialchars($singleSchoolId) ?>">
+          <?php endif; ?>
+          <button class="btn btn-outline" type="submit">Export</button>
+        </form>
         <button class="btn btn-dark" type="button" data-open-modal="class-create-modal">Klas aanmaken</button>
       </div>
-    </div>
-    <div class="csv-tools">
-      <form class="csv-tool-form" method="get" action="/klassen/export">
-        <select class="form-select" name="school_id">
-          <option value="">Alle scholen</option>
-          <?php foreach ($schools as $school): ?>
-            <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <button class="btn btn-outline btn-sm" type="submit">CSV export</button>
-      </form>
-      <form class="csv-tool-form" method="post" action="/klassen/import" enctype="multipart/form-data">
-        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
-        <select class="form-select" name="school_id" required>
-          <?php if ($singleSchoolId === ''): ?><option value="">Kies school</option><?php endif; ?>
-          <?php foreach ($schools as $school): ?>
-            <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <input class="form-input" type="file" name="csv_file" accept=".csv,text/csv" required>
-        <button class="btn btn-outline btn-sm" type="submit">CSV import</button>
-      </form>
     </div>
 
     <div class="table-wrap">
@@ -745,6 +768,44 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
     </div>
   </div>
 
+  <div id="subject-import-modal" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="subject-import-title" hidden>
+    <div class="modal modal-lg app-modal">
+      <div class="modal-head">
+        <div>
+          <div id="subject-import-title" class="modal-title">Vakken importeren</div>
+          <div class="muted text-sm">Importeer een CSV met kolommen: naam, code, active.</div>
+        </div>
+        <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <form method="post" action="/vakken/import" enctype="multipart/form-data">
+        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+        <div class="modal-body">
+          <div class="app-modal-grid">
+            <div class="form-group">
+              <label class="form-label">School</label>
+              <select class="form-select" name="school_id" required>
+                <?php if ($singleSchoolId === ''): ?><option value="">Kies school</option><?php endif; ?>
+                <?php foreach ($schools as $school): ?>
+                  <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">CSV bestand</label>
+              <input class="form-input" type="file" name="csv_file" accept=".csv,text/csv" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-outline" type="button" data-close-modal>Annuleren</button>
+          <button class="btn btn-dark" type="submit">Importeren</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <section class="card tasks-card">
     <div class="tasks-head">
       <div>
@@ -752,30 +813,15 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
         <div class="muted text-sm">Alle vakken binnen jouw scope.</div>
       </div>
       <div class="view-actions">
+        <button class="btn btn-outline" type="button" data-open-modal="subject-import-modal">Import</button>
+        <form class="inline-action-form" method="get" action="/vakken/export">
+          <?php if ($singleSchoolId !== ''): ?>
+            <input type="hidden" name="school_id" value="<?= htmlspecialchars($singleSchoolId) ?>">
+          <?php endif; ?>
+          <button class="btn btn-outline" type="submit">Export</button>
+        </form>
         <button class="btn btn-dark" type="button" data-open-modal="subject-create-modal">Vak aanmaken</button>
       </div>
-    </div>
-    <div class="csv-tools">
-      <form class="csv-tool-form" method="get" action="/vakken/export">
-        <select class="form-select" name="school_id">
-          <option value="">Alle scholen</option>
-          <?php foreach ($schools as $school): ?>
-            <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <button class="btn btn-outline btn-sm" type="submit">CSV export</button>
-      </form>
-      <form class="csv-tool-form" method="post" action="/vakken/import" enctype="multipart/form-data">
-        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
-        <select class="form-select" name="school_id" required>
-          <?php if ($singleSchoolId === ''): ?><option value="">Kies school</option><?php endif; ?>
-          <?php foreach ($schools as $school): ?>
-            <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <input class="form-input" type="file" name="csv_file" accept=".csv,text/csv" required>
-        <button class="btn btn-outline btn-sm" type="submit">CSV import</button>
-      </form>
     </div>
 
     <div class="table-wrap">
@@ -1496,6 +1542,44 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
     </div>
   </div>
 
+  <div id="teacher-import-modal" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="teacher-import-title" hidden>
+    <div class="modal modal-lg app-modal">
+      <div class="modal-head">
+        <div>
+          <div id="teacher-import-title" class="modal-title">Leraren importeren</div>
+          <div class="muted text-sm">Importeer een CSV met kolommen: naam, email, wachtwoord, vakken, beschikbaarheid, active.</div>
+        </div>
+        <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <form method="post" action="/leraren/import" enctype="multipart/form-data">
+        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+        <div class="modal-body">
+          <div class="app-modal-grid">
+            <div class="form-group">
+              <label class="form-label">School</label>
+              <select class="form-select" name="school_id" required>
+                <?php if ($singleSchoolId === ''): ?><option value="">Kies school</option><?php endif; ?>
+                <?php foreach ($schools as $school): ?>
+                  <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">CSV bestand</label>
+              <input class="form-input" type="file" name="csv_file" accept=".csv,text/csv" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-outline" type="button" data-close-modal>Annuleren</button>
+          <button class="btn btn-dark" type="submit">Importeren</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <section class="card tasks-card">
     <div class="tasks-head">
       <div>
@@ -1503,30 +1587,15 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
         <div class="muted text-sm">Account, bevoegdheden en roosterprofiel staan hier bij elkaar.</div>
       </div>
       <div class="view-actions">
+        <button class="btn btn-outline" type="button" data-open-modal="teacher-import-modal">Import</button>
+        <form class="inline-action-form" method="get" action="/leraren/export">
+          <?php if ($singleSchoolId !== ''): ?>
+            <input type="hidden" name="school_id" value="<?= htmlspecialchars($singleSchoolId) ?>">
+          <?php endif; ?>
+          <button class="btn btn-outline" type="submit">Export</button>
+        </form>
         <button class="btn btn-dark" type="button" data-open-modal="teacher-create-modal">Nieuwe leraar</button>
       </div>
-    </div>
-    <div class="csv-tools">
-      <form class="csv-tool-form" method="get" action="/leraren/export">
-        <select class="form-select" name="school_id">
-          <option value="">Alle scholen</option>
-          <?php foreach ($schools as $school): ?>
-            <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <button class="btn btn-outline btn-sm" type="submit">CSV export</button>
-      </form>
-      <form class="csv-tool-form" method="post" action="/leraren/import" enctype="multipart/form-data">
-        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
-        <select class="form-select" name="school_id" required>
-          <?php if ($singleSchoolId === ''): ?><option value="">Kies school</option><?php endif; ?>
-          <?php foreach ($schools as $school): ?>
-            <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <input class="form-input" type="file" name="csv_file" accept=".csv,text/csv" required>
-        <button class="btn btn-outline btn-sm" type="submit">CSV import</button>
-      </form>
     </div>
 
     <div class="table-wrap">
