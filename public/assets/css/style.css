@@ -1468,6 +1468,43 @@ body.has-modal-open {
   min-height: 38px;
   border-radius: 7px;
 }
+.location-manager-head,
+.location-manager-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 110px 110px minmax(170px, auto);
+  gap: 8px;
+  align-items: center;
+}
+.location-manager-head {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.location-manager-row {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.location-manager-row .form-group,
+.location-manager-create-grid .form-group {
+  margin-bottom: 0;
+}
+.location-manager-create-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 110px auto;
+  gap: 8px;
+  align-items: center;
+}
+.location-manager-row .form-input,
+.location-manager-create-grid .form-input {
+  height: 38px;
+  min-height: 38px;
+  border-radius: 7px;
+}
 .danger-soft {
   color: var(--coral);
   border-color: color-mix(in srgb, var(--coral) 30%, var(--line));
@@ -5057,7 +5094,9 @@ table.data-table tbody tr.row-selected {
   .period-manager-row,
   .period-manager-create-grid,
   .break-manager-row,
-  .break-manager-create-grid {
+  .break-manager-create-grid,
+  .location-manager-row,
+  .location-manager-create-grid {
     grid-template-columns: 1fr;
   }
   .period-manager-actions {

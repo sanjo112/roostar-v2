@@ -775,6 +775,42 @@ final class RosterDataRepository
         ]);
     }
 
+    public function updateLocation(string $locationId, string $schoolId, string $name, bool $external, bool $active): void
+    {
+        if (!$this->encryptedRowBelongsToSchool('locaties', $locationId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een locatie van dezelfde school.');
+        }
+
+        $this->updateEncrypted('locaties', $locationId, $schoolId, [
+            'naam' => $name,
+            'extern' => $external ? 1 : 0,
+            'active' => $active ? 1 : 0,
+        ]);
+    }
+
+    public function deleteLocation(string $locationId, string $schoolId): void
+    {
+        if (!$this->encryptedRowBelongsToSchool('locaties', $locationId, $schoolId)) {
+            throw new \InvalidArgumentException('Kies een locatie van dezelfde school.');
+        }
+
+        $stmt = $this->db->prepare("SELECT COUNT(*) FROM lokalen WHERE locatie_id = :locatie_id AND school_id = :school_id");
+        $stmt->execute([
+            'locatie_id' => $locationId,
+            'school_id' => $schoolId,
+        ]);
+
+        if ((int) $stmt->fetchColumn() > 0) {
+            throw new \InvalidArgumentException('Verplaats of verwijder eerst de lokalen op deze locatie.');
+        }
+
+        $stmt = $this->db->prepare("DELETE FROM locaties WHERE id = :id AND school_id = :school_id");
+        $stmt->execute([
+            'id' => $locationId,
+            'school_id' => $schoolId,
+        ]);
+    }
+
     public function createRoom(string $schoolId, string $locationId, string $name, ?int $capacity, array $availableSlots, array $subjectIds): void
     {
         if (!$this->locationBelongsToSchool($locationId, $schoolId)) {
@@ -815,6 +851,43 @@ final class RosterDataRepository
         $stmt = $this->db->prepare("DELETE FROM lokaal_vakken WHERE lokaal_id = :lokaal_id");
         $stmt->execute(['lokaal_id' => $roomId]);
         $this->syncRoomSubjects($roomId, $schoolId, $subjectIds);
+    }
+
+    public function copyRoom(string $roomId, string $schoolId): void
+    {
+        $stmt = $this->db->prepare("
+            SELECT id, school_id, locatie_id, naam_encrypted, capaciteit, beschikbaarheid_json
+            FROM lokalen
+            WHERE id = :id
+              AND school_id = :school_id
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'id' => $roomId,
+            'school_id' => $schoolId,
+        ]);
+        $room = $stmt->fetch();
+
+        if (!is_array($room)) {
+            throw new \InvalidArgumentException('Kies een lokaal van dezelfde school.');
+        }
+
+        $subjectRows = $this->subjectsByRoom([$roomId]);
+        $subjectIds = array_map(static fn (array $subject): string => (string) $subject['id'], $subjectRows[$roomId] ?? []);
+        $availability = $room['beschikbaarheid_json'] !== null
+            ? json_decode((string) $room['beschikbaarheid_json'], true)
+            : null;
+        $availableSlots = is_array($availability) ? array_values(array_filter($availability, 'is_string')) : [];
+
+        $copiedRoomId = $this->createEncrypted('lokalen', [
+            'school_id' => $schoolId,
+            'locatie_id' => (string) $room['locatie_id'],
+            'naam' => $this->decrypt((string) $room['naam_encrypted']) . ' kopie',
+            'capaciteit' => $room['capaciteit'] !== null ? (int) $room['capaciteit'] : null,
+            'beschikbaarheid_json' => $room['beschikbaarheid_json'] !== null ? json_encode($availableSlots, JSON_THROW_ON_ERROR) : null,
+        ]);
+
+        $this->syncRoomSubjects($copiedRoomId, $schoolId, $subjectIds);
     }
 
     private function encryptedRowsFor(UserContext $user, string $table, string $alias, string $select, string $order): array

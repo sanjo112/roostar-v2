@@ -906,37 +906,85 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
 <?php endif; ?>
 
 <?php if (($activeTab ?? 'vakken') === 'lokalen'): ?>
-  <div id="location-create-modal" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="location-create-title" hidden>
-    <div class="modal modal-lg app-modal">
+  <div id="location-manage-modal" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="location-manage-title" hidden>
+    <div class="modal modal-xl app-modal">
       <div class="modal-head">
         <div>
-          <div id="location-create-title" class="modal-title">Locatie aanmaken</div>
-          <div class="muted text-sm">Gebruik locaties voor eigen gebouwen en externe leslocaties.</div>
+          <div id="location-manage-title" class="modal-title">Locaties beheren</div>
+          <div class="muted text-sm">Beheer eigen gebouwen en externe leslocaties.</div>
         </div>
         <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </div>
-      <form method="post" action="/locaties">
-        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
-        <input type="hidden" name="school_id" value="<?= htmlspecialchars($singleSchoolId !== '' ? $singleSchoolId : (string) ($schools[0]['id'] ?? '')) ?>">
-        <div class="modal-body">
-          <div class="app-modal-grid room-modal-grid">
-            <div class="form-group">
-              <label class="form-label">Locatie</label>
-              <input class="form-input" type="text" name="naam" placeholder="Sporthal De Brug" required>
-            </div>
-            <label class="modal-picker-item">
-              <input type="checkbox" name="extern" value="1">
-              <span><strong>Externe locatie</strong><small>Buiten het eigen schoolgebouw</small></span>
-            </label>
+      <div class="modal-body">
+        <div class="period-manager">
+          <div class="period-manager-list">
+            <?php if (!empty($locations)): ?>
+              <div class="location-manager-head">
+                <span>Locatie</span>
+                <span>Type</span>
+                <span>Status</span>
+                <span>Acties</span>
+              </div>
+            <?php endif; ?>
+            <?php foreach (($locations ?? []) as $location): ?>
+              <form method="post" action="/locaties/bewerk" class="location-manager-row">
+                <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $location['school_id']) ?>">
+                <input type="hidden" name="locatie_id" value="<?= htmlspecialchars((string) $location['id']) ?>">
+                <div class="form-group">
+                  <label class="form-label sr-only">Locatie</label>
+                  <input class="form-input" type="text" name="naam" value="<?= htmlspecialchars((string) $location['naam']) ?>" required>
+                </div>
+                <label class="period-active-toggle">
+                  <input type="checkbox" name="extern" value="1" <?= !empty($location['extern']) ? 'checked' : '' ?>>
+                  <span>Extern</span>
+                </label>
+                <label class="period-active-toggle">
+                  <input type="hidden" name="active" value="0">
+                  <input type="checkbox" name="active" value="1" <?= !empty($location['active']) ? 'checked' : '' ?>>
+                  <span>Actief</span>
+                </label>
+                <div class="period-manager-actions">
+                  <button class="btn btn-dark btn-sm" type="submit">Opslaan</button>
+                  <button class="btn btn-outline btn-sm danger-soft" type="submit" form="location-delete-<?= htmlspecialchars((string) $location['id']) ?>">Verwijderen</button>
+                </div>
+              </form>
+              <form id="location-delete-<?= htmlspecialchars((string) $location['id']) ?>" method="post" action="/locaties/verwijder">
+                <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $location['school_id']) ?>">
+                <input type="hidden" name="locatie_id" value="<?= htmlspecialchars((string) $location['id']) ?>">
+              </form>
+            <?php endforeach; ?>
+            <?php if (empty($locations)): ?>
+              <div class="period-manager-empty">Nog geen locaties aangemaakt.</div>
+            <?php endif; ?>
           </div>
+
+          <form method="post" action="/locaties" class="period-manager-create">
+            <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+            <input type="hidden" name="school_id" value="<?= htmlspecialchars($singleSchoolId !== '' ? $singleSchoolId : (string) ($schools[0]['id'] ?? '')) ?>">
+            <div class="period-manager-create-head">
+              <strong>Locatie toevoegen</strong>
+            </div>
+            <div class="location-manager-create-grid">
+              <div class="form-group">
+                <label class="form-label sr-only">Locatie</label>
+                <input class="form-input" type="text" name="naam" placeholder="Sporthal De Brug" required>
+              </div>
+              <label class="period-active-toggle">
+                <input type="checkbox" name="extern" value="1">
+                <span>Extern</span>
+              </label>
+              <button class="btn btn-dark btn-sm" type="submit">Toevoegen</button>
+            </div>
+          </form>
         </div>
-        <div class="modal-foot">
-          <button class="btn btn-outline" type="button" data-close-modal>Annuleren</button>
-          <button class="btn btn-dark" type="submit">Locatie aanmaken</button>
-        </div>
-      </form>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" type="button" data-close-modal>Sluiten</button>
+      </div>
     </div>
   </div>
 
@@ -1045,7 +1093,7 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
         <div class="muted text-sm">Alle lokalen en locaties binnen jouw scope.</div>
       </div>
       <div class="view-actions">
-        <button class="btn btn-outline" type="button" data-open-modal="location-create-modal">Locatie aanmaken</button>
+        <button class="btn btn-outline" type="button" data-open-modal="location-manage-modal">Locaties beheren</button>
         <button class="btn btn-dark" type="button" data-open-modal="room-create-modal">Lokaal aanmaken</button>
       </div>
     </div>
@@ -1081,8 +1129,16 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
                 <?php endif; ?>
               </td>
               <td><span class="status <?= !empty($room['active']) ? 'st-done' : 'st-wait' ?>"><?= !empty($room['active']) ? 'Actief' : 'Inactief' ?></span></td>
-              <td>
-                <button class="btn btn-outline btn-sm" type="button" data-open-modal="room-edit-<?= htmlspecialchars((string) $room['id']) ?>">Bewerken</button>
+              <td class="actions-cell">
+                <div class="table-actions">
+                  <button class="btn btn-outline btn-sm" type="button" data-open-modal="room-edit-<?= htmlspecialchars((string) $room['id']) ?>">Bewerken</button>
+                  <form method="post" action="/lokalen/kopieer">
+                    <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                    <input type="hidden" name="school_id" value="<?= htmlspecialchars((string) $room['school_id']) ?>">
+                    <input type="hidden" name="lokaal_id" value="<?= htmlspecialchars((string) $room['id']) ?>">
+                    <button class="btn btn-outline btn-sm" type="submit">Kopiëren</button>
+                  </form>
+                </div>
               </td>
             </tr>
           <?php endforeach; ?>

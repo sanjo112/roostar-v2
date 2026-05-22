@@ -17,6 +17,7 @@ use Roostar\Core\Security\Encryptor;
 use Roostar\Core\View\AppView;
 use Roostar\Modules\Auth\Services\AuthSession;
 use Roostar\Modules\RosterData\Repositories\RosterDataRepository;
+use Roostar\Modules\RosterData\Services\RosterDataCsvService;
 use Roostar\Modules\Schools\Repositories\SchoolRepository;
 use Roostar\Modules\Users\UserCreator;
 
@@ -430,6 +431,20 @@ final class RosterDataController
         }, 'roster_data.room_updated');
     }
 
+    public function copyRoom(Request $request): Response
+    {
+        return $this->store($request, '/stamdata?tab=lokalen', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+            $roomId = $request->string('lokaal_id');
+
+            if ($roomId === '') {
+                throw new \InvalidArgumentException('Kies eerst een lokaal.');
+            }
+
+            $repository->copyRoom($roomId, $schoolId);
+            NotificationBag::success('Lokaal is gekopieerd.');
+        }, 'roster_data.room_copied');
+    }
+
     public function storeLocation(Request $request): Response
     {
         return $this->store($request, '/stamdata?tab=lokalen', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
@@ -442,6 +457,39 @@ final class RosterDataController
             $repository->createLocation($schoolId, $name, $request->string('extern') === '1');
             NotificationBag::success('Locatie is aangemaakt.');
         }, 'roster_data.location_created');
+    }
+
+    public function updateLocation(Request $request): Response
+    {
+        return $this->store($request, '/stamdata?tab=lokalen', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+            $locationId = $request->string('locatie_id');
+            $name = $request->string('naam');
+
+            if ($locationId === '') {
+                throw new \InvalidArgumentException('Kies eerst een locatie.');
+            }
+
+            if ($name === '') {
+                throw new \InvalidArgumentException('Vul een locatienaam in.');
+            }
+
+            $repository->updateLocation($locationId, $schoolId, $name, $request->string('extern') === '1', $request->string('active') === '1');
+            NotificationBag::success('Locatie is bijgewerkt.');
+        }, 'roster_data.location_updated');
+    }
+
+    public function deleteLocation(Request $request): Response
+    {
+        return $this->store($request, '/stamdata?tab=lokalen', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+            $locationId = $request->string('locatie_id');
+
+            if ($locationId === '') {
+                throw new \InvalidArgumentException('Kies eerst een locatie.');
+            }
+
+            $repository->deleteLocation($locationId, $schoolId);
+            NotificationBag::success('Locatie is verwijderd.');
+        }, 'roster_data.location_deleted');
     }
 
     public function storeTeacher(Request $request): Response
@@ -551,23 +599,28 @@ final class RosterDataController
 
     public function importClasses(Request $request): Response
     {
-        return $this->importRows($request, '/stamdata?tab=klassen', function (RosterDataRepository $repository, string $schoolId, array $rows): int {
+        $csv = new RosterDataCsvService();
+
+        return $this->importRows($request, '/stamdata?tab=klassen', function (RosterDataRepository $repository, string $schoolId, array $rows) use ($csv): int {
             $count = 0;
             foreach ($rows as $row) {
-                $name = $this->csvValue($row, ['naam', 'klas', 'class']);
+                $name = $csv->value($row, ['naam', 'klas', 'class']);
                 if ($name === '') {
                     continue;
                 }
 
+                $schoolYearId = $repository->schoolYearIdByName($schoolId, $csv->value($row, ['schooljaar', 'school_year']));
+                $programId = $repository->programIdByCodeOrName($schoolId, $csv->value($row, ['opleiding', 'opleiding_code', 'program']));
+                $yearLevel = $csv->value($row, ['leerjaar', 'year_level']) !== '' ? (int) $csv->value($row, ['leerjaar', 'year_level']) : null;
                 $classId = $repository->createClass(
                     $schoolId,
                     $name,
-                    $repository->schoolYearIdByName($schoolId, $this->csvValue($row, ['schooljaar', 'school_year'])),
-                    $repository->programIdByCodeOrName($schoolId, $this->csvValue($row, ['opleiding', 'opleiding_code', 'program'])),
-                    $this->csvValue($row, ['leerjaar', 'year_level']) !== '' ? (int) $this->csvValue($row, ['leerjaar', 'year_level']) : null,
+                    $schoolYearId,
+                    $programId,
+                    $yearLevel,
                 );
-                if ($this->csvValue($row, ['active', 'actief']) === '0') {
-                    $repository->updateClass($classId, $schoolId, $name, $repository->schoolYearIdByName($schoolId, $this->csvValue($row, ['schooljaar', 'school_year'])), $repository->programIdByCodeOrName($schoolId, $this->csvValue($row, ['opleiding', 'opleiding_code', 'program'])), $this->csvValue($row, ['leerjaar', 'year_level']) !== '' ? (int) $this->csvValue($row, ['leerjaar', 'year_level']) : null, false);
+                if ($csv->value($row, ['active', 'actief']) === '0') {
+                    $repository->updateClass($classId, $schoolId, $name, $schoolYearId, $programId, $yearLevel, false);
                 }
                 $count++;
             }
@@ -589,17 +642,20 @@ final class RosterDataController
 
     public function importSubjects(Request $request): Response
     {
-        return $this->importRows($request, '/stamdata?tab=vakken', function (RosterDataRepository $repository, string $schoolId, array $rows): int {
+        $csv = new RosterDataCsvService();
+
+        return $this->importRows($request, '/stamdata?tab=vakken', function (RosterDataRepository $repository, string $schoolId, array $rows) use ($csv): int {
             $count = 0;
             foreach ($rows as $row) {
-                $name = $this->csvValue($row, ['naam', 'vak', 'subject']);
+                $name = $csv->value($row, ['naam', 'vak', 'subject']);
                 if ($name === '') {
                     continue;
                 }
 
-                $subjectId = $repository->createSubject($schoolId, $name, $this->csvValue($row, ['code']));
-                if ($this->csvValue($row, ['active', 'actief']) === '0') {
-                    $repository->updateSubject($subjectId, $schoolId, $name, $this->csvValue($row, ['code']), false);
+                $code = $csv->value($row, ['code']);
+                $subjectId = $repository->createSubject($schoolId, $name, $code);
+                if ($csv->value($row, ['active', 'actief']) === '0') {
+                    $repository->updateSubject($subjectId, $schoolId, $name, $code, false);
                 }
                 $count++;
             }
@@ -624,16 +680,18 @@ final class RosterDataController
 
     public function importTeachers(Request $request): Response
     {
-        return $this->importRows($request, '/stamdata?tab=leraren', function (RosterDataRepository $repository, string $schoolId, array $rows): int {
+        $csv = new RosterDataCsvService();
+
+        return $this->importRows($request, '/stamdata?tab=leraren', function (RosterDataRepository $repository, string $schoolId, array $rows) use ($csv): int {
             $db = Connection::get();
             $creator = new UserCreator($db, new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
             $grants = new PermissionGrantRepository($db);
             $count = 0;
 
             foreach ($rows as $row) {
-                $name = $this->csvValue($row, ['naam', 'name']);
-                $email = mb_strtolower($this->csvValue($row, ['email', 'e-mail']));
-                $password = $this->csvValue($row, ['wachtwoord', 'password']);
+                $name = $csv->value($row, ['naam', 'name']);
+                $email = mb_strtolower($csv->value($row, ['email', 'e-mail']));
+                $password = $csv->value($row, ['wachtwoord', 'password']);
 
                 if ($name === '' || $email === '' || strlen($password) < 8 || $creator->emailExists($email)) {
                     continue;
@@ -652,8 +710,8 @@ final class RosterDataController
                     $grants->grant($teacherId, $permission, 'school', $schoolId);
                 }
 
-                $availableSlots = $this->csvList($this->csvValue($row, ['beschikbaarheid', 'available_slots']));
-                $subjectIds = $repository->subjectIdsByCodes($schoolId, $this->csvList($this->csvValue($row, ['vakken', 'subject_codes'])));
+                $availableSlots = $csv->list($csv->value($row, ['beschikbaarheid', 'available_slots']));
+                $subjectIds = $repository->subjectIdsByCodes($schoolId, $csv->list($csv->value($row, ['vakken', 'subject_codes'])));
                 $repository->syncTeacherProfile(
                     $teacherId,
                     $schoolId,
@@ -662,7 +720,7 @@ final class RosterDataController
                     $availableSlots,
                     $subjectIds,
                 );
-                if ($this->csvValue($row, ['active', 'actief']) === '0') {
+                if ($csv->value($row, ['active', 'actief']) === '0') {
                     $repository->updateTeacher($teacherId, $schoolId, $name, $email, false);
                 }
                 $count++;
@@ -691,7 +749,7 @@ final class RosterDataController
         $repository = new RosterDataRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
         $rows = $rowsCallback($repository, $user, $schoolId);
 
-        return Response::csv($this->csvBody($headers, $rows), $filename);
+        return Response::csv((new RosterDataCsvService())->body($headers, $rows), $filename);
     }
 
     private function importRows(Request $request, string $redirectPath, callable $callback, string $label): Response
@@ -717,7 +775,7 @@ final class RosterDataController
         }
 
         try {
-            $rows = $this->uploadedCsvRows('csv_file');
+            $rows = (new RosterDataCsvService())->uploadedRows('csv_file');
             $repository = new RosterDataRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
             $count = $callback($repository, $schoolId, $rows);
             NotificationBag::success($label . ' import klaar: ' . $count . ' toegevoegd.');
@@ -738,116 +796,6 @@ final class RosterDataController
         }
 
         return array_values(array_filter($rows, static fn (array $row): bool => (string) ($row['school_id'] ?? '') === $schoolId));
-    }
-
-    private function csvBody(array $headers, array $rows): string
-    {
-        $stream = fopen('php://temp', 'r+');
-        if ($stream === false) {
-            throw new \RuntimeException('CSV kon niet worden aangemaakt.');
-        }
-
-        fputcsv($stream, $headers, ',', '"', '');
-        foreach ($rows as $row) {
-            fputcsv($stream, array_map(static fn (string $header): string => (string) ($row[$header] ?? ''), $headers), ',', '"', '');
-        }
-
-        rewind($stream);
-        $body = stream_get_contents($stream);
-        fclose($stream);
-
-        return $body === false ? '' : $body;
-    }
-
-    private function uploadedCsvRows(string $field): array
-    {
-        $file = $_FILES[$field] ?? null;
-        if (!is_array($file) || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            throw new \InvalidArgumentException('Kies een CSV bestand.');
-        }
-
-        $path = (string) ($file['tmp_name'] ?? '');
-        $handle = fopen($path, 'r');
-        if ($handle === false) {
-            throw new \InvalidArgumentException('CSV bestand kon niet worden gelezen.');
-        }
-
-        $delimiter = $this->detectCsvDelimiter($handle);
-        $headers = null;
-        $rows = [];
-        while (($data = fgetcsv($handle, 0, $delimiter, '"', '')) !== false) {
-            if ($headers === null) {
-                $headers = array_map([$this, 'normalizeCsvHeader'], $data);
-                continue;
-            }
-
-            if ($data === [null] || array_filter($data, static fn (mixed $value): bool => trim((string) $value) !== '') === []) {
-                continue;
-            }
-
-            $row = [];
-            foreach ($headers as $index => $header) {
-                if ($header !== '') {
-                    $row[$header] = trim((string) ($data[$index] ?? ''));
-                }
-            }
-            $rows[] = $row;
-        }
-        fclose($handle);
-
-        if ($headers === null) {
-            throw new \InvalidArgumentException('CSV bestand heeft geen header.');
-        }
-
-        return $rows;
-    }
-
-    /**
-     * @param resource $handle
-     */
-    private function detectCsvDelimiter($handle): string
-    {
-        $sample = fgets($handle);
-        rewind($handle);
-
-        if (!is_string($sample)) {
-            return ',';
-        }
-
-        $delimiters = [',' => substr_count($sample, ','), ';' => substr_count($sample, ';'), "\t" => substr_count($sample, "\t")];
-        arsort($delimiters);
-        $delimiter = (string) array_key_first($delimiters);
-
-        return ($delimiters[$delimiter] ?? 0) > 0 ? $delimiter : ',';
-    }
-
-    private function normalizeCsvHeader(string $header): string
-    {
-        $header = preg_replace('/^\xEF\xBB\xBF/', '', $header) ?? $header;
-        $header = strtolower(trim($header));
-        $header = str_replace([' ', '-'], '_', $header);
-
-        return preg_replace('/[^a-z0-9_]/', '', $header) ?? '';
-    }
-
-    private function csvValue(array $row, array $keys): string
-    {
-        foreach ($keys as $key) {
-            if (isset($row[$key]) && trim((string) $row[$key]) !== '') {
-                return trim((string) $row[$key]);
-            }
-        }
-
-        return '';
-    }
-
-    private function csvList(string $value): array
-    {
-        if ($value === '') {
-            return [];
-        }
-
-        return array_values(array_filter(array_map('trim', preg_split('/[;,|]/', $value) ?: []), static fn (string $item): bool => $item !== ''));
     }
 
     private function renderMasterData(string $tab): Response

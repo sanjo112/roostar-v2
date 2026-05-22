@@ -95,8 +95,11 @@ return static function (Router $router): void {
     $router->get('/vakken/export', [$rosterData, 'exportSubjects'], $authRequired);
     $router->post('/vakken/import', [$rosterData, 'importSubjects'], $authRequired);
     $router->post('/locaties', [$rosterData, 'storeLocation'], $authRequired);
+    $router->post('/locaties/bewerk', [$rosterData, 'updateLocation'], $authRequired);
+    $router->post('/locaties/verwijder', [$rosterData, 'deleteLocation'], $authRequired);
     $router->post('/lokalen', [$rosterData, 'storeRoom'], $authRequired);
     $router->post('/lokalen/bewerk', [$rosterData, 'updateRoom'], $authRequired);
+    $router->post('/lokalen/kopieer', [$rosterData, 'copyRoom'], $authRequired);
     $router->get('/leraren', [$rosterData, 'teachers'], $authRequired);
     $router->post('/leraren', [$rosterData, 'storeTeacher'], $authRequired);
     $router->post('/leraren/bewerk', [$rosterData, 'updateTeacher'], $authRequired);
