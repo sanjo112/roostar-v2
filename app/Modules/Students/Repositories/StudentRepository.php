@@ -182,7 +182,38 @@ final class StudentRepository
         ]);
         $id = $stmt->fetchColumn();
 
-        return is_string($id) ? $id : null;
+        if (is_string($id)) {
+            return $id;
+        }
+
+        $wanted = $this->normalizeClassCode($className);
+        if ($wanted === '') {
+            return null;
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT id, naam_encrypted
+            FROM klassen
+            WHERE school_id = :school_id
+              AND active = 1
+            ORDER BY created_at DESC
+        ");
+        $stmt->execute(['school_id' => $schoolId]);
+
+        $suffixMatch = null;
+        foreach ($stmt->fetchAll() as $row) {
+            $candidate = $this->normalizeClassCode($this->decrypt((string) $row['naam_encrypted']));
+
+            if ($candidate === $wanted) {
+                return (string) $row['id'];
+            }
+
+            if ($suffixMatch === null && str_ends_with($candidate, $wanted)) {
+                $suffixMatch = (string) $row['id'];
+            }
+        }
+
+        return $suffixMatch;
     }
 
     public function electiveSubjectIdsByCodes(string $classId, array $codes): array
@@ -405,5 +436,10 @@ final class StudentRepository
         } catch (\Throwable) {
             return '[onleesbaar]';
         }
+    }
+
+    private function normalizeClassCode(string $value): string
+    {
+        return preg_replace('/[^A-Z0-9]/', '', mb_strtoupper(trim($value))) ?? '';
     }
 }

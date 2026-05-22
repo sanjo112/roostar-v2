@@ -74,6 +74,11 @@ final class RosterDataCsvService
             if (isset($row[$key]) && trim((string) $row[$key]) !== '') {
                 return trim((string) $row[$key]);
             }
+
+            $normalizedKey = $this->normalizeHeader($key);
+            if (isset($row[$normalizedKey]) && trim((string) $row[$normalizedKey]) !== '') {
+                return trim((string) $row[$normalizedKey]);
+            }
         }
 
         return '';
