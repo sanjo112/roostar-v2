@@ -140,6 +140,86 @@ final class StudentRepository
         $this->syncStudentElectives($studentId, $classId, $electiveSubjectIds);
     }
 
+    public function studentIdByEmailForSchool(string $schoolId, string $email): ?string
+    {
+        $stmt = $this->db->prepare("
+            SELECT id
+            FROM users
+            WHERE school_id = :school_id
+              AND email = :email
+              AND role = 'leerling'
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'school_id' => $schoolId,
+            'email' => mb_strtolower(trim($email)),
+        ]);
+        $id = $stmt->fetchColumn();
+
+        return is_string($id) ? $id : null;
+    }
+
+    public function classIdByName(string $schoolId, string $className): ?string
+    {
+        $className = trim($className);
+        if ($className === '') {
+            return null;
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT id
+            FROM klassen
+            WHERE school_id = :school_id
+              AND active = 1
+              AND (id = :class_id OR naam_search_hash = :naam_search_hash)
+            ORDER BY created_at DESC
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'school_id' => $schoolId,
+            'class_id' => $className,
+            'naam_search_hash' => Str::searchHash($className),
+        ]);
+        $id = $stmt->fetchColumn();
+
+        return is_string($id) ? $id : null;
+    }
+
+    public function electiveSubjectIdsByCodes(string $classId, array $codes): array
+    {
+        $values = array_values(array_unique(array_filter(array_map(static fn (mixed $code): string => trim((string) $code), $codes), static fn (string $code): bool => $code !== '')));
+        if ($values === []) {
+            return [];
+        }
+
+        $codePlaceholders = [];
+        $hashPlaceholders = [];
+        $params = ['klas_id' => $classId];
+        foreach ($values as $index => $value) {
+            $key = 'code_' . $index;
+            $hashKey = 'hash_' . $index;
+            $codePlaceholders[] = ':' . $key;
+            $hashPlaceholders[] = ':' . $hashKey;
+            $params[$key] = mb_strtoupper($value);
+            $params[$hashKey] = Str::searchHash($value);
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT v.id
+            FROM klassen k
+            INNER JOIN opleiding_vakken ov ON ov.opleiding_id = k.opleiding_id AND ov.keuzevak = 1
+            INNER JOIN vakken v ON v.id = ov.vak_id
+            WHERE k.id = :klas_id
+              AND (
+                UPPER(v.code) IN (" . implode(', ', $codePlaceholders) . ")
+                OR v.naam_search_hash IN (" . implode(', ', $hashPlaceholders) . ")
+              )
+        ");
+        $stmt->execute($params);
+
+        return array_map(static fn (array $row): string => (string) $row['id'], $stmt->fetchAll());
+    }
+
     private function syncStudentElectives(string $studentId, ?string $classId, array $electiveSubjectIds): void
     {
         $stmt = $this->db->prepare("DELETE FROM leerling_keuzevakken WHERE user_id = :user_id");

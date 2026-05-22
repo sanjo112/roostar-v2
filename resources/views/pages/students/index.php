@@ -84,6 +84,71 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
   </div>
 </div>
 
+<div id="student-import-export-modal" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="student-import-export-title" hidden>
+  <div class="modal app-modal">
+    <div class="modal-head">
+      <div>
+        <div id="student-import-export-title" class="modal-title">Leerlingen importeren en exporteren</div>
+        <div class="muted text-sm">Gebruik CSV met naam, leerlingnummer, e-mail, klas en keuzevakken.</div>
+      </div>
+      <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form method="post" action="/leerlingen/import" enctype="multipart/form-data">
+        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+        <div class="app-modal-grid">
+          <div class="form-group">
+            <label class="form-label">School</label>
+            <select class="form-select" name="school_id" required>
+              <?php if ($singleSchoolId === ''): ?>
+                <option value="">Kies een school</option>
+              <?php endif; ?>
+              <?php foreach ($schools as $school): ?>
+                <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">CSV bestand</label>
+            <input class="form-input" type="file" name="csv_file" accept=".csv,text/csv" required>
+          </div>
+        </div>
+        <div class="import-hint">
+          Verwachte kolommen: <strong>naam</strong>, <strong>leerlingnummer</strong>, <strong>email</strong>, <strong>wachtwoord</strong>, <strong>klas</strong>, <strong>keuzevakken</strong>, <strong>active</strong>.
+          Meerdere keuzevakken mogen met puntkomma in een cel, bijvoorbeeld <strong>WIS;NAT</strong>.
+        </div>
+        <div class="modal-foot compact-foot">
+          <button class="btn btn-dark" type="submit">Importeren</button>
+        </div>
+      </form>
+
+      <form method="get" action="/leerlingen/export" class="export-panel">
+        <div class="app-modal-grid">
+          <div class="form-group">
+            <label class="form-label">School</label>
+            <select class="form-select" name="school_id" required>
+              <?php if ($singleSchoolId === ''): ?>
+                <option value="">Kies een school</option>
+              <?php endif; ?>
+              <?php foreach ($schools as $school): ?>
+                <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+        </div>
+        <div class="modal-foot compact-foot">
+          <button class="btn btn-outline" type="submit">Exporteren</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" type="button" data-close-modal>Sluiten</button>
+    </div>
+  </div>
+</div>
+
 <section class="card tasks-card">
   <div class="tasks-head">
     <div>
@@ -91,6 +156,7 @@ $singleSchoolId = count($schools) === 1 ? (string) ($schools[0]['id'] ?? '') : '
       <div class="muted text-sm">Beheer leerlingaccounts en klasindeling.</div>
     </div>
     <div class="view-actions">
+      <button class="btn btn-outline" type="button" data-open-modal="student-import-export-modal">Import / export</button>
       <button class="btn btn-dark" type="button" data-open-modal="student-create-modal">Nieuwe leerling</button>
     </div>
   </div>

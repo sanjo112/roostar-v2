@@ -724,7 +724,7 @@ final class RosterDataController
                     }
 
                     $generatedPassword = $password === '';
-                    $password = $generatedPassword ? PasswordService::temporaryPassword() : $password;
+                    $password = $generatedPassword ? 'RoostarV2!' : $password;
                     $teacherId = $creator->create([
                         'name' => $name,
                         'email' => $email,

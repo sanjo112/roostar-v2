@@ -1336,6 +1336,24 @@ body.has-modal-open {
 .app-modal-grid .form-group {
   margin-bottom: 0;
 }
+.import-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.export-panel {
+  border-top: 1px solid var(--line);
+  margin-top: 18px;
+  padding-top: 18px;
+}
+.modal-foot.compact-foot {
+  border-top: 0;
+  padding: 0;
+}
 .room-modal-grid {
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(140px, .7fr);
   align-items: end;

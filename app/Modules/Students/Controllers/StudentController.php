@@ -16,6 +16,8 @@ use Roostar\Core\Security\Csrf;
 use Roostar\Core\Security\Encryptor;
 use Roostar\Core\View\AppView;
 use Roostar\Modules\Auth\Services\AuthSession;
+use Roostar\Modules\Auth\Services\PasswordService;
+use Roostar\Modules\RosterData\Services\RosterDataCsvService;
 use Roostar\Modules\Schools\Repositories\SchoolRepository;
 use Roostar\Modules\Students\Repositories\StudentRepository;
 use Roostar\Modules\Users\UserCreator;
@@ -137,6 +139,138 @@ final class StudentController
             $repository->deactivate($studentId, $schoolId);
             NotificationBag::success('Leerling is verwijderd uit actieve lijsten.');
         }, 'students.deleted');
+    }
+
+    public function export(Request $request): Response
+    {
+        $user = AuthSession::userContext();
+        if (!$user) {
+            return Response::redirect('/login');
+        }
+
+        if (!$user->hasPermission(PermissionRegistry::SCHOOL_MANAGE)) {
+            return $this->forbidden();
+        }
+
+        $schoolId = $request->string('school_id');
+        if ($schoolId === '' || !$user->hasPermission(PermissionRegistry::SCHOOL_MANAGE, 'school', $schoolId)) {
+            return $this->forbidden();
+        }
+
+        $repository = new StudentRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
+        $students = array_values(array_filter($repository->listFor($user), static fn (array $student): bool => (string) ($student['school_id'] ?? '') === $schoolId));
+        $headers = ['naam', 'leerlingnummer', 'email', 'wachtwoord', 'klas', 'keuzevakken', 'active'];
+        $rows = array_map(static fn (array $student): array => [
+            'naam' => (string) $student['naam'],
+            'leerlingnummer' => (string) ($student['leerlingnummer'] ?? ''),
+            'email' => (string) $student['email'],
+            'wachtwoord' => '',
+            'klas' => (string) ($student['klas_naam'] ?? ''),
+            'keuzevakken' => implode(';', array_map(static fn (array $subject): string => (string) ($subject['code'] ?: $subject['naam']), $student['electives'] ?? [])),
+            'active' => !empty($student['active']) ? '1' : '0',
+        ], $students);
+
+        return Response::csv((new RosterDataCsvService())->body($headers, $rows), 'leerlingen.csv');
+    }
+
+    public function import(Request $request): Response
+    {
+        $user = AuthSession::userContext();
+
+        if (!$user) {
+            return Response::redirect('/login');
+        }
+
+        if (!$user->hasPermission(PermissionRegistry::SCHOOL_MANAGE)) {
+            return $this->forbidden();
+        }
+
+        if (!Csrf::verify($request->string('_token'))) {
+            NotificationBag::error('Je sessie is verlopen. Probeer opnieuw.');
+            return Response::redirect('/leerlingen');
+        }
+
+        $schoolId = $request->string('school_id');
+        if ($schoolId === '' || !$user->hasPermission(PermissionRegistry::SCHOOL_MANAGE, 'school', $schoolId)) {
+            NotificationBag::error('Je mag geen leerlingen beheren voor deze school.');
+            return Response::redirect('/leerlingen');
+        }
+
+        $db = Connection::get();
+        $repository = new StudentRepository($db, new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
+        $creator = new UserCreator($db, new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
+        $grants = new PermissionGrantRepository($db);
+        $passwords = new PasswordService($db);
+        $csv = new RosterDataCsvService();
+
+        try {
+            $rows = $csv->uploadedRows('csv_file');
+            $count = 0;
+
+            foreach ($rows as $row) {
+                $name = $csv->value($row, ['naam', 'name']);
+                $email = mb_strtolower($csv->value($row, ['email', 'e-mail']));
+                $password = $csv->value($row, ['wachtwoord', 'password']);
+
+                if ($name === '' || $email === '') {
+                    continue;
+                }
+
+                if ($password !== '' && strlen($password) < 8) {
+                    continue;
+                }
+
+                $studentId = $repository->studentIdByEmailForSchool($schoolId, $email);
+                if ($studentId === null) {
+                    if ($creator->emailExists($email)) {
+                        continue;
+                    }
+
+                    $generatedPassword = $password === '';
+                    $password = $generatedPassword ? 'RoostarV2!' : $password;
+                    $studentId = $creator->create([
+                        'name' => $name,
+                        'email' => $email,
+                        'password' => $password,
+                        'role' => 'leerling',
+                        'school_id' => $schoolId,
+                        'scholengroep_id' => null,
+                    ]);
+
+                    if ($generatedPassword) {
+                        $passwords->setTemporaryPassword($studentId, $password);
+                    }
+
+                    foreach (RoleDefaults::basePermissions('leerling') as $permission) {
+                        $grants->grant($studentId, $permission, 'school', $schoolId);
+                    }
+                }
+
+                $classId = $repository->classIdByName($schoolId, $csv->value($row, ['klas', 'class']));
+                $electiveSubjectIds = $classId
+                    ? $repository->electiveSubjectIdsByCodes($classId, $csv->list($csv->value($row, ['keuzevakken', 'keuze_vakken', 'electives', 'elective_subjects'])))
+                    : [];
+
+                $repository->updateStudent($studentId, $schoolId, $name, $email, $csv->value($row, ['active', 'actief']) !== '0');
+                $repository->syncProfile(
+                    $studentId,
+                    $schoolId,
+                    $classId,
+                    $csv->value($row, ['leerlingnummer', 'studentnummer', 'student_number']),
+                    $electiveSubjectIds,
+                );
+                $count++;
+            }
+
+            NotificationBag::success('Leerlingen import klaar: ' . $count . ' toegevoegd/bijgewerkt.');
+            (new AuditLogger($db))->record('students.csv_import', $user->id, 'school', $schoolId, ['count' => $count], (string) ($request->server['REMOTE_ADDR'] ?? 'unknown'));
+        } catch (\InvalidArgumentException $error) {
+            NotificationBag::warning($error->getMessage());
+        } catch (\Throwable $error) {
+            NotificationBag::error('Leerlingen import is niet gelukt: ' . $error->getMessage());
+        }
+
+        return Response::redirect('/leerlingen');
     }
 
     private function handle(Request $request, callable $callback, string $auditAction): Response

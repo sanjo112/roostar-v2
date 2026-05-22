@@ -112,6 +112,8 @@ return static function (Router $router): void {
     $router->post('/leerlingen', [$students, 'store'], $authRequired);
     $router->post('/leerlingen/bewerk', [$students, 'update'], $authRequired);
     $router->post('/leerlingen/verwijder', [$students, 'delete'], $authRequired);
+    $router->get('/leerlingen/export', [$students, 'export'], $authRequired);
+    $router->post('/leerlingen/import', [$students, 'import'], $authRequired);
     $router->get('/gebruikers', [$users, 'index'], $authRequired);
     $router->get('/gebruikers/nieuw', [$users, 'create'], $authRequired);
     $router->post('/gebruikers', [$users, 'store'], $authRequired);
