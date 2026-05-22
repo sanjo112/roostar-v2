@@ -1567,6 +1567,10 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
                       <strong><?= htmlspecialchars((string) $subject['naam']) ?></strong>
                       <small><?= htmlspecialchars((string) ($subject['code'] ?? '')) ?></small>
                     </span>
+                    <span class="teacher-subject-weight">
+                      <input class="form-input" type="number" name="subject_preferences[<?= htmlspecialchars((string) $subject['id']) ?>]" min="1" max="100" value="100">
+                      <small>%</small>
+                    </span>
                   </label>
                 <?php endforeach; ?>
                 <?php if (empty($subjects)): ?>
@@ -1685,7 +1689,7 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
               <td>
                 <div class="inline-pill-list">
                   <?php foreach (($teacher['subjects'] ?? []) as $subject): ?>
-                    <span class="soft-pill"><?= htmlspecialchars((string) ($subject['code'] ?: $subject['naam'])) ?></span>
+                    <span class="soft-pill"><?= htmlspecialchars((string) ($subject['code'] ?: $subject['naam'])) ?> · <?= htmlspecialchars((string) ($subject['voorkeur_percentage'] ?? 100)) ?>%</span>
                   <?php endforeach; ?>
                   <?php if (empty($teacher['subjects'])): ?>
                     <span class="muted">Geen vakken</span>
@@ -1765,11 +1769,24 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
                 <div class="form-label">Vakken</div>
                 <div class="teacher-subject-list">
                   <?php foreach (($subjects ?? []) as $subject): ?>
+                    <?php
+                      $teacherSubjectPreference = 100;
+                      foreach (($teacher['subjects'] ?? []) as $teacherSubject) {
+                          if ((string) $teacherSubject['id'] === (string) $subject['id']) {
+                              $teacherSubjectPreference = (int) ($teacherSubject['voorkeur_percentage'] ?? 100);
+                              break;
+                          }
+                      }
+                    ?>
                     <label class="modal-picker-item">
                       <input type="checkbox" name="subject_ids[]" value="<?= htmlspecialchars((string) $subject['id']) ?>" <?= in_array((string) $subject['id'], $teacherSubjectIds, true) ? 'checked' : '' ?>>
                       <span>
                         <strong><?= htmlspecialchars((string) $subject['naam']) ?></strong>
                         <small><?= htmlspecialchars((string) ($subject['code'] ?? '')) ?></small>
+                      </span>
+                      <span class="teacher-subject-weight">
+                        <input class="form-input" type="number" name="subject_preferences[<?= htmlspecialchars((string) $subject['id']) ?>]" min="1" max="100" value="<?= htmlspecialchars((string) $teacherSubjectPreference) ?>">
+                        <small>%</small>
                       </span>
                     </label>
                   <?php endforeach; ?>

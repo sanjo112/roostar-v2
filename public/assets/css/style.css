@@ -1742,6 +1742,25 @@ body.has-modal-open {
   border-radius: 8px;
   background: var(--bg);
 }
+.teacher-subject-list .modal-picker-item {
+  grid-template-columns: 18px minmax(0, 1fr) 88px;
+  align-items: center;
+}
+.teacher-subject-weight {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 4px;
+}
+.teacher-subject-weight .form-input {
+  min-height: 34px;
+  height: 34px;
+  padding: 0 8px;
+  text-align: right;
+}
+.teacher-subject-weight small {
+  margin-top: 0;
+}
 .teacher-availability-grid {
   display: grid;
   grid-template-columns: 44px repeat(var(--day-count), minmax(54px, 1fr));

@@ -521,7 +521,8 @@ final class RosterGenerationRepository
                 lp.max_uren_per_week,
                 lp.max_uren_per_dag,
                 lp.beschikbaarheid_json,
-                GROUP_CONCAT(lv.vak_id) AS subject_ids
+                GROUP_CONCAT(lv.vak_id) AS subject_ids,
+                GROUP_CONCAT(CONCAT(lv.vak_id, ':', lv.voorkeur_percentage)) AS subject_preferences
             FROM users u
             LEFT JOIN leraar_vakken lv ON lv.user_id = u.id
             LEFT JOIN leraar_profielen lp ON lp.user_id = u.id
@@ -543,6 +544,7 @@ final class RosterGenerationRepository
                 'name' => $this->decrypt((string) $row['naam_encrypted']),
                 'email' => (string) $row['email'],
                 'subjectIds' => $row['subject_ids'] ? explode(',', (string) $row['subject_ids']) : [],
+                'subjectPreferences' => $this->parseSubjectPreferences((string) ($row['subject_preferences'] ?? '')),
                 'availableSlots' => is_array($availability) ? array_values(array_filter($availability, 'is_string')) : null,
                 'maxHoursPerDay' => (int) ($row['max_uren_per_dag'] ?? 6),
                 'maxHoursPerWeek' => (int) ($row['max_uren_per_week'] ?? 24),
@@ -688,5 +690,18 @@ final class RosterGenerationRepository
         } catch (\Throwable) {
             return '[onleesbaar]';
         }
+    }
+
+    private function parseSubjectPreferences(string $value): array
+    {
+        $preferences = [];
+        foreach (array_filter(explode(',', $value)) as $part) {
+            [$subjectId, $percentage] = array_pad(explode(':', $part, 2), 2, '100');
+            if ($subjectId !== '') {
+                $preferences[$subjectId] = max(1, min(100, (int) $percentage));
+            }
+        }
+
+        return $preferences;
     }
 }

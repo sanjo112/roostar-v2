@@ -222,7 +222,7 @@ final class RosterDataRepository
         }, $rows);
     }
 
-    public function syncTeacherProfile(string $teacherId, string $schoolId, int $maxHoursPerWeek, int $maxHoursPerDay, array $availableSlots, array $subjectIds): void
+    public function syncTeacherProfile(string $teacherId, string $schoolId, int $maxHoursPerWeek, int $maxHoursPerDay, array $availableSlots, array $subjectIds, array $subjectPreferences = []): void
     {
         if (!$this->teacherBelongsToSchool($teacherId, $schoolId)) {
             throw new \InvalidArgumentException('Kies een leraar van dezelfde school.');
@@ -250,7 +250,7 @@ final class RosterDataRepository
 
         $stmt = $this->db->prepare("DELETE FROM leraar_vakken WHERE user_id = :user_id");
         $stmt->execute(['user_id' => $teacherId]);
-        $this->syncTeacherSubjects($teacherId, $schoolId, $subjectIds);
+        $this->syncTeacherSubjects($teacherId, $schoolId, $subjectIds, $subjectPreferences);
     }
 
     public function teacherIdByEmailForSchool(string $schoolId, string $email): ?string
@@ -739,6 +739,45 @@ final class RosterDataRepository
         return array_column($stmt->fetchAll(), 'id');
     }
 
+    public function subjectPreferencesByCodes(string $schoolId, array $preferencesByCode): array
+    {
+        $normalized = [];
+        foreach ($preferencesByCode as $code => $percentage) {
+            $code = strtoupper(trim((string) $code));
+            if ($code !== '') {
+                $normalized[$code] = max(1, min(100, (int) $percentage));
+            }
+        }
+
+        if ($normalized === []) {
+            return [];
+        }
+
+        $placeholders = [];
+        $params = ['school_id' => $schoolId];
+        foreach (array_keys($normalized) as $index => $code) {
+            $key = 'code_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $code;
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT id, code
+            FROM vakken
+            WHERE school_id = :school_id
+              AND code IN (" . implode(', ', $placeholders) . ")
+              AND active = 1
+        ");
+        $stmt->execute($params);
+
+        $preferences = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $preferences[(string) $row['id']] = $normalized[strtoupper((string) $row['code'])] ?? 100;
+        }
+
+        return $preferences;
+    }
+
     public function createProgram(string $schoolId, string $name, string $code, string $level, array $subjectIds, array $electiveSubjectIds = [], array $subjectHours = []): void
     {
         $programId = $this->createEncrypted('opleidingen', [
@@ -1075,7 +1114,7 @@ final class RosterDataRepository
         }
     }
 
-    private function syncTeacherSubjects(string $teacherId, string $schoolId, array $subjectIds): void
+    private function syncTeacherSubjects(string $teacherId, string $schoolId, array $subjectIds, array $subjectPreferences = []): void
     {
         $subjectIds = array_values(array_unique(array_filter($subjectIds, static fn (mixed $id): bool => is_string($id) && $id !== '')));
 
@@ -1085,16 +1124,24 @@ final class RosterDataRepository
 
         $validSubjectIds = $this->subjectIdsForSchool($schoolId, $subjectIds);
         $stmt = $this->db->prepare("
-            INSERT IGNORE INTO leraar_vakken (user_id, vak_id, created_at)
-            VALUES (:user_id, :vak_id, NOW())
+            INSERT INTO leraar_vakken (user_id, vak_id, voorkeur_percentage, created_at)
+            VALUES (:user_id, :vak_id, :voorkeur_percentage, NOW())
+            ON DUPLICATE KEY UPDATE
+                voorkeur_percentage = VALUES(voorkeur_percentage)
         ");
 
         foreach ($validSubjectIds as $subjectId) {
             $stmt->execute([
                 'user_id' => $teacherId,
                 'vak_id' => $subjectId,
+                'voorkeur_percentage' => $this->normalizeSubjectPreference($subjectPreferences[$subjectId] ?? 100),
             ]);
         }
+    }
+
+    private function normalizeSubjectPreference(mixed $value): int
+    {
+        return max(1, min(100, (int) $value));
     }
 
     private function subjectIdsForSchool(string $schoolId, array $subjectIds): array
@@ -1312,7 +1359,7 @@ final class RosterDataRepository
         }
 
         $stmt = $this->db->prepare("
-            SELECT lv.user_id, v.id, v.naam_encrypted, v.code
+            SELECT lv.user_id, v.id, v.naam_encrypted, v.code, lv.voorkeur_percentage
             FROM leraar_vakken lv
             INNER JOIN vakken v ON v.id = lv.vak_id
             WHERE lv.user_id IN (" . implode(', ', $placeholders) . ")
@@ -1326,6 +1373,7 @@ final class RosterDataRepository
                 'id' => $row['id'],
                 'naam' => $this->decrypt((string) $row['naam_encrypted']),
                 'code' => $row['code'],
+                'voorkeur_percentage' => (int) ($row['voorkeur_percentage'] ?? 100),
             ];
         }
 

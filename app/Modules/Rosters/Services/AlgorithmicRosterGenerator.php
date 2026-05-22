@@ -31,6 +31,7 @@ final class AlgorithmicRosterGenerator
         $groupDayHours = [];
         $teacherDayHours = [];
         $teacherWeekHours = [];
+        $teacherSubjectHours = [];
 
         foreach ($lessonGroups as $group) {
             for ($index = 0; $index < (int) $group['hoursPerWeek']; $index++) {
@@ -44,6 +45,7 @@ final class AlgorithmicRosterGenerator
                     $groupDayHours,
                     $teacherDayHours,
                     $teacherWeekHours,
+                    $teacherSubjectHours,
                 );
 
                 if ($placement === null) {
@@ -77,6 +79,7 @@ final class AlgorithmicRosterGenerator
                 $groupDayHours[$group['id']][$day][] = $period;
                 $teacherDayHours[$placement['teacher']['id']][$day] = ($teacherDayHours[$placement['teacher']['id']][$day] ?? 0) + 1;
                 $teacherWeekHours[$placement['teacher']['id']] = ($teacherWeekHours[$placement['teacher']['id']] ?? 0) + 1;
+                $teacherSubjectHours[$placement['teacher']['id']][$group['subject']['id']] = ($teacherSubjectHours[$placement['teacher']['id']][$group['subject']['id']] ?? 0) + 1;
             }
         }
 
@@ -110,6 +113,7 @@ final class AlgorithmicRosterGenerator
         array $groupDayHours,
         array $teacherDayHours,
         array $teacherWeekHours,
+        array $teacherSubjectHours,
     ): ?array {
         $best = null;
         $bestScore = PHP_INT_MAX;
@@ -143,7 +147,8 @@ final class AlgorithmicRosterGenerator
                         continue;
                     }
 
-                    $score = $this->score($group, $room, $slot, $groupDayHours);
+                    $score = $this->score($group, $room, $slot, $groupDayHours)
+                        + $this->teacherWorkloadPenalty($group, $teacher, $constraints, $teacherWeekHours, $teacherSubjectHours);
                     if ($score < $bestScore) {
                         $bestScore = $score;
                         $best = ['slot' => $slot, 'teacher' => $teacher, 'room' => $room];
@@ -262,6 +267,33 @@ final class AlgorithmicRosterGenerator
         $largestCapacity = max(array_map(static fn (array $room): int => (int) ($room['capacity'] ?? 0), $subjectRooms));
 
         return 'Lokaalcapaciteit te klein: nodig ' . $studentCount . ', grootste geschikte lokaal ' . $largestCapacity . '.';
+    }
+
+    private function teacherWorkloadPenalty(array $group, array $teacher, array $constraints, array $teacherWeekHours, array $teacherSubjectHours): int
+    {
+        $teacherId = (string) $teacher['id'];
+        $subjectId = (string) $group['subject']['id'];
+        $maxHours = max(1, (int) ($teacher['maxHoursPerWeek'] ?? 24));
+        $weekLoadPenalty = (int) round((($teacherWeekHours[$teacherId] ?? 0) / $maxHours) * 900);
+
+        $qualifiedTeachers = $this->qualifiedTeachers($group, $constraints);
+        $preferenceSum = array_sum(array_map(
+            static fn (array $candidate): int => max(1, (int) ($candidate['subjectPreferences'][$subjectId] ?? 100)),
+            $qualifiedTeachers,
+        ));
+        $preference = max(1, (int) ($teacher['subjectPreferences'][$subjectId] ?? 100));
+        $targetShare = $preferenceSum > 0 ? $preference / $preferenceSum : 1 / max(1, count($qualifiedTeachers));
+
+        $currentSubjectHours = 0;
+        foreach ($qualifiedTeachers as $candidate) {
+            $currentSubjectHours += (int) ($teacherSubjectHours[(string) $candidate['id']][$subjectId] ?? 0);
+        }
+
+        $projectedTeacherHours = (int) ($teacherSubjectHours[$teacherId][$subjectId] ?? 0) + 1;
+        $projectedShare = $projectedTeacherHours / max(1, $currentSubjectHours + 1);
+        $subjectMixPenalty = (int) round(abs($projectedShare - $targetShare) * 1400);
+
+        return $weekLoadPenalty + $subjectMixPenalty;
     }
 
     private function qualifiedTeachers(array $group, array $constraints): array

@@ -544,13 +544,15 @@ final class RosterDataController
             }
 
             $availableSlots = $this->arrayInput($request, 'available_slots');
+            $subjectIds = $this->arrayInput($request, 'subject_ids');
             $repository->syncTeacherProfile(
                 $teacherId,
                 $schoolId,
                 $this->hoursPerWeekFromSlots($availableSlots),
                 $this->hoursPerDayFromSlots($availableSlots),
                 $availableSlots,
-                $this->arrayInput($request, 'subject_ids'),
+                $subjectIds,
+                $this->subjectPreferencesInput($request, $subjectIds),
             );
             NotificationBag::success('Leraar is aangemaakt.');
         }, 'roster_data.teacher_created');
@@ -572,6 +574,7 @@ final class RosterDataController
             }
 
             $availableSlots = $this->arrayInput($request, 'available_slots');
+            $subjectIds = $this->arrayInput($request, 'subject_ids');
             $repository->updateTeacher($teacherId, $schoolId, $name, $email, $request->string('active') === '1');
             $repository->syncTeacherProfile(
                 $teacherId,
@@ -579,7 +582,8 @@ final class RosterDataController
                 $this->hoursPerWeekFromSlots($availableSlots),
                 $this->hoursPerDayFromSlots($availableSlots),
                 $availableSlots,
-                $this->arrayInput($request, 'subject_ids'),
+                $subjectIds,
+                $this->subjectPreferencesInput($request, $subjectIds),
             );
             NotificationBag::success('Leraar is bijgewerkt.');
         }, 'roster_data.teacher_updated');
@@ -686,7 +690,7 @@ final class RosterDataController
                 'naam' => (string) $teacher['naam'],
                 'email' => (string) $teacher['email'],
                 'wachtwoord' => '',
-                'vakken' => implode(';', array_map(static fn (array $subject): string => (string) ($subject['code'] ?? ''), $teacher['subjects'] ?? [])),
+                'vakken' => implode(';', array_map(static fn (array $subject): string => (string) ($subject['code'] ?? '') . ':' . (string) ($subject['voorkeur_percentage'] ?? 100), $teacher['subjects'] ?? [])),
                 'beschikbaarheid' => implode(';', $teacher['available_slots'] ?? []),
                 'active' => !empty($teacher['active']) ? '1' : '0',
             ], $this->filterBySchool($repository->teachersFor($user), $schoolId));
@@ -744,7 +748,9 @@ final class RosterDataController
                 }
 
                 $availableSlots = $csv->list($csv->value($row, ['beschikbaarheid', 'available_slots']));
-                $subjectIds = $repository->subjectIdsByCodes($schoolId, $csv->list($csv->value($row, ['vakken', 'subject_codes'])));
+                $subjectTokens = $csv->list($csv->value($row, ['vakken', 'subject_codes']));
+                [$subjectCodes, $subjectPreferencesByCode] = $this->teacherSubjectTokens($subjectTokens);
+                $subjectIds = $repository->subjectIdsByCodes($schoolId, $subjectCodes);
                 $repository->syncTeacherProfile(
                     $teacherId,
                     $schoolId,
@@ -752,6 +758,7 @@ final class RosterDataController
                     $this->hoursPerDayFromSlots($availableSlots),
                     $availableSlots,
                     $subjectIds,
+                    $repository->subjectPreferencesByCodes($schoolId, $subjectPreferencesByCode),
                 );
                 $repository->updateTeacher($teacherId, $schoolId, $name, $email, $csv->value($row, ['active', 'actief']) !== '0');
                 $count++;
@@ -957,6 +964,46 @@ final class RosterDataController
         $value = $request->input($key, []);
 
         return is_array($value) ? $value : [];
+    }
+
+    private function subjectPreferencesInput(Request $request, array $subjectIds): array
+    {
+        $rawPreferences = $request->input('subject_preferences', []);
+        if (!is_array($rawPreferences)) {
+            return [];
+        }
+
+        $selected = array_flip(array_map('strval', $subjectIds));
+        $preferences = [];
+        foreach ($rawPreferences as $subjectId => $percentage) {
+            $subjectId = (string) $subjectId;
+            if (!isset($selected[$subjectId])) {
+                continue;
+            }
+
+            $preferences[$subjectId] = max(1, min(100, (int) $percentage));
+        }
+
+        return $preferences;
+    }
+
+    private function teacherSubjectTokens(array $tokens): array
+    {
+        $codes = [];
+        $preferences = [];
+
+        foreach ($tokens as $token) {
+            [$code, $percentage] = array_pad(explode(':', (string) $token, 2), 2, '100');
+            $code = strtoupper(trim($code));
+            if ($code === '') {
+                continue;
+            }
+
+            $codes[] = $code;
+            $preferences[$code] = max(1, min(100, (int) $percentage));
+        }
+
+        return [$codes, $preferences];
     }
 
     private function weekSelection(Request $request, string $key): array
