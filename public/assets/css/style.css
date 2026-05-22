@@ -27,6 +27,14 @@
   --navy-soft: #E2E6F1;
   --sidebar-width: 256px;
   --topbar-height: 62px;
+  --control-height: 38px;
+  --control-height-lg: 46px;
+  --control-border-color: var(--line-2);
+  --control-radius: 8px;
+  --control-radius-sm: 7px;
+  --control-bg: #fff;
+  --button-height: var(--control-height);
+  --icon-button-size: 34px;
 }
 
 * { box-sizing: border-box; }
@@ -376,9 +384,9 @@ body {
 
 .btn {
   display: inline-flex; align-items: center; gap: 7px;
-  min-height: 36px;
+  min-height: var(--button-height);
   padding: 8px 13px;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   font: inherit;
   font-weight: 500;
   font-size: 13px;
@@ -387,12 +395,12 @@ body {
   text-decoration: none;
   white-space: nowrap;
   color: var(--ink);
-  background: #fff;
+  background: var(--control-bg);
 }
 .btn svg { width: 14px; height: 14px; }
 .btn-dark { background: var(--blue); color: #fff; border-color: var(--blue); }
 .btn-dark:hover { background: #245FD4; border-color: #245FD4; }
-.btn-outline { border-color: var(--line-2); background: #fff; }
+.btn-outline { border-color: var(--control-border-color); background: var(--control-bg); }
 .btn-outline:hover { border-color: var(--blue); color: var(--blue); }
 .btn-danger { background: var(--coral-soft); color: var(--coral); }
 .btn-danger:hover { background: #fbd9d4; }
@@ -615,10 +623,12 @@ body {
 }
 
 .icon-btn {
-  width: 34px; height: 34px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: #fff;
+  width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  min-height: var(--icon-button-size);
+  border-radius: var(--control-radius-sm);
+  border: 1px solid var(--control-border-color);
+  background: var(--control-bg);
   display: grid; place-items: center;
   color: var(--ink);
   cursor: pointer;
@@ -629,6 +639,7 @@ body {
 .icon-btn-sm {
   width: 28px;
   height: 28px;
+  min-height: 28px;
 }
 .icon-btn-sm svg {
   width: 13px;
@@ -1187,21 +1198,20 @@ table.data-table td strong { font-weight: 500; color: var(--ink); }
 .form-input, .form-select, .form-textarea {
   width: 100%;
   padding: 9px 12px;
-  border-radius: 9px;
-  border: 1px solid var(--line-2);
-  background: #fff;
+  border-radius: var(--control-radius);
+  border: 1px solid var(--control-border-color);
+  background: var(--control-bg);
   font: inherit; font-size: 13.5px;
   color: var(--ink);
   outline: none;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
 .form-input, .form-select {
-  min-height: 38px;
+  min-height: var(--control-height);
 }
 .form-select {
   appearance: none;
-  min-height: 46px;
-  border-radius: 10px;
+  min-height: var(--control-height);
   padding-right: 38px;
   background-image:
     linear-gradient(45deg, transparent 50%, var(--ink-2) 50%),
@@ -1214,7 +1224,8 @@ table.data-table td strong { font-weight: 500; color: var(--ink); }
 }
 .app-modal .form-input,
 .app-modal .form-select {
-  min-height: 46px;
+  --control-height: var(--control-height-lg);
+  min-height: var(--control-height-lg);
   border-radius: 10px;
 }
 .form-input:focus, .form-select:focus, .form-textarea:focus {
@@ -3801,6 +3812,10 @@ body.has-modal-open {
   gap: 8px;
 }
 .roster-overview-controls {
+  --control-height: 38px;
+  --control-radius: var(--control-radius-sm);
+  --icon-button-size: var(--control-height);
+  --button-height: var(--control-height);
   flex: 1 1 auto;
   justify-content: flex-end;
   min-width: 0;
@@ -3826,29 +3841,35 @@ body.has-modal-open {
 .control-cluster > .icon-btn,
 .control-cluster > .form-select {
   box-sizing: border-box;
-  height: 38px;
-  min-height: 38px;
+  height: var(--control-height);
+  min-height: var(--control-height);
   border-radius: 0;
 }
 .control-cluster > .icon-btn:first-child {
-  border-radius: 7px 0 0 7px;
+  border-radius: var(--control-radius) 0 0 var(--control-radius);
 }
 .control-cluster > .form-select:not(:first-child):not(:last-child) {
   border-radius: 0;
 }
 .control-cluster > .icon-btn:last-child {
-  border-radius: 0 7px 7px 0;
+  border-radius: 0 var(--control-radius) var(--control-radius) 0;
 }
 .roster-overview-controls .form-select {
-  height: 38px;
-  min-height: 38px;
+  height: var(--control-height);
+  min-height: var(--control-height);
   padding-top: 0;
   padding-bottom: 0;
-  line-height: 38px;
-  border-radius: 7px;
+  line-height: var(--control-height);
+  border-radius: var(--control-radius);
 }
 .week-picker-controls .form-select {
   flex: 0 0 auto;
+  box-sizing: border-box;
+  height: var(--control-height);
+  min-height: var(--control-height);
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: var(--control-height);
 }
 .week-picker-controls select[name="week"] {
   width: 122px;
@@ -3864,16 +3885,10 @@ body.has-modal-open {
   min-width: 130px;
 }
 .roster-overview-controls .icon-btn {
-  flex: 0 0 38px;
-  width: 38px;
-  height: 38px;
-  min-height: 38px;
+  flex: 0 0 var(--icon-button-size);
 }
 .week-picker-controls .icon-btn {
-  flex: 0 0 38px;
-  width: 38px;
-  height: 38px;
-  min-height: 38px;
+  flex: 0 0 var(--icon-button-size);
   text-decoration: none;
 }
 .schedule-grid-wrap {
