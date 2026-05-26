@@ -19,11 +19,12 @@ final class GreedyInitialScheduler implements InitialScheduler
     private array $classSubjectDayPeriods = [];
     private array $teacherDayRooms = [];
     private array $classDayPeriods = [];
+    private array $classLessonTotals = [];
 
     public function createInitialSchedule(SchedulingInput $input): Schedule
     {
         $schedule = new Schedule();
-        $this->resetState();
+        $this->resetState($input);
 
         foreach ($this->orderedLessonRequests($input->lessonRequests, $input) as $lessonRequest) {
             $assignment = $this->firstAvailableAssignment($lessonRequest, $input, $schedule);
@@ -37,7 +38,7 @@ final class GreedyInitialScheduler implements InitialScheduler
         return $schedule;
     }
 
-    private function resetState(): void
+    private function resetState(SchedulingInput $input): void
     {
         $this->teacherSlots = [];
         $this->classSlots = [];
@@ -45,6 +46,11 @@ final class GreedyInitialScheduler implements InitialScheduler
         $this->classSubjectDayPeriods = [];
         $this->teacherDayRooms = [];
         $this->classDayPeriods = [];
+        $this->classLessonTotals = [];
+
+        foreach ($input->lessonRequests as $lessonRequest) {
+            $this->classLessonTotals[$lessonRequest->classGroupId] = ($this->classLessonTotals[$lessonRequest->classGroupId] ?? 0) + 1;
+        }
     }
 
     /**
@@ -249,6 +255,7 @@ final class GreedyInitialScheduler implements InitialScheduler
         }
 
         $score += $this->classCompactnessScore($classDayPeriods, $slot->period);
+        $score += $this->classDayBalanceScore($request->classGroupId, $slot);
         $score += $this->teacherMoveScore($assignment, $room, $slot);
 
         $teacher = $input->teacher($request->teacherId);
@@ -259,6 +266,59 @@ final class GreedyInitialScheduler implements InitialScheduler
         $score -= $slot->period;
 
         return $score;
+    }
+
+    private function classDayBalanceScore(string $classGroupId, TimeSlot $slot): int
+    {
+        $total = (int) ($this->classLessonTotals[$classGroupId] ?? 0);
+
+        if ($total < 1) {
+            return 0;
+        }
+
+        $current = count($this->classDayPeriods[$classGroupId][$slot->dayIndex] ?? []);
+        $target = $this->targetDayLoad($total, $slot->dayIndex);
+        $beforeDistance = abs($current - $target);
+        $afterDistance = abs(($current + 1) - $target);
+        $score = (int) round(($beforeDistance - $afterDistance) * 180);
+
+        if ($current === 0 && $slot->dayIndex <= 4 && $total >= 10) {
+            $score += 120;
+        }
+
+        if ($current + 1 > $target + 0.35) {
+            $score -= (int) round((($current + 1) - $target) * 90);
+        }
+
+        if ($slot->dayIndex === 5) {
+            $score -= 70;
+
+            if ($slot->period >= 5) {
+                $score -= 220;
+            }
+
+            if ($slot->period >= 7) {
+                $score -= 180;
+            }
+        } elseif ($slot->period >= 8) {
+            $score -= 70;
+        }
+
+        return $score;
+    }
+
+    private function targetDayLoad(int $total, int $dayIndex): float
+    {
+        $weights = [
+            1 => 1.08,
+            2 => 1.08,
+            3 => 1.08,
+            4 => 1.02,
+            5 => 0.74,
+        ];
+        $sum = array_sum($weights);
+
+        return $total * ($weights[$dayIndex] ?? 1.0) / $sum;
     }
 
     private function hasPossibleBlockNeighbour(LessonRequest $request, Room $room, TimeSlot $slot, SchedulingInput $input): bool
