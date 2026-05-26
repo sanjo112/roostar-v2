@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Roostar\Core\View;
 
 use Roostar\Core\Http\View;
+use Roostar\Core\Database\Connection;
 use Roostar\Core\Notifications\NotificationBag;
 use Roostar\Modules\Auth\Services\AuthSession;
+use Roostar\Modules\Auth\Services\SchoolLoginVisualService;
 use Roostar\Modules\Navigation\NavigationBuilder;
 
 final class AppView
@@ -25,6 +27,16 @@ final class AppView
 
         $content = View::render('pages/' . $page, $data);
         $notifications = NotificationBag::pull();
+        $schoolLogoPath = $data['schoolLogoPath'] ?? null;
+
+        if (!is_string($schoolLogoPath) && $context?->schoolId) {
+            try {
+                $schoolLogoPath = (new SchoolLoginVisualService(Connection::get(), $_ENV['APP_KEY'] ?? ''))
+                    ->currentLogoPathForSchool($context->schoolId);
+            } catch (\Throwable) {
+                $schoolLogoPath = null;
+            }
+        }
 
         return View::render('layouts/app', [
             ...$data,
@@ -34,6 +46,7 @@ final class AppView
             'notifications' => $notifications,
             'notificationCenter' => NotificationBag::recent() ?: $notifications,
             'pageTitle' => $pageTitle,
+            'schoolLogoPath' => $schoolLogoPath,
             'user' => $user,
         ]);
     }

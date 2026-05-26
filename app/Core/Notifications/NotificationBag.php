@@ -35,27 +35,7 @@ final class NotificationBag
         $notifications = $_SESSION[self::SESSION_KEY] ?? [];
         unset($_SESSION[self::SESSION_KEY]);
 
-        $notifications = is_array($notifications) ? $notifications : [];
-        $userId = self::currentUserId();
-
-        if ($userId) {
-            try {
-                $stored = (new NotificationRepository(Connection::get()))->unreadForUser($userId);
-                $notifications = [
-                    ...array_map(static fn (array $row): array => [
-                        'id' => $row['id'],
-                        'type' => $row['type'],
-                        'title' => $row['title'],
-                        'message' => $row['message'],
-                    ], $stored),
-                    ...$notifications,
-                ];
-            } catch (\Throwable) {
-                return $notifications;
-            }
-        }
-
-        return $notifications;
+        return is_array($notifications) ? $notifications : [];
     }
 
     public static function recent(): array
@@ -83,17 +63,6 @@ final class NotificationBag
 
     private static function push(string $type, string $message, string $title): void
     {
-        $userId = self::currentUserId();
-
-        if ($userId && $type === 'warning') {
-            try {
-                (new NotificationRepository(Connection::get()))->create($userId, $type, $title, $message);
-                return;
-            } catch (\Throwable) {
-                // Fall back to session notifications when the database is unavailable.
-            }
-        }
-
         $_SESSION[self::SESSION_KEY] ??= [];
         $_SESSION[self::SESSION_KEY][] = [
             'type' => $type,

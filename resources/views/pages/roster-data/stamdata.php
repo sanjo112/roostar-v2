@@ -1332,7 +1332,13 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
                   <input type="checkbox" name="elective_subject_ids[]" value="<?= htmlspecialchars((string) $subject['id']) ?>">
                 </label>
                 <?php foreach (($periods ?? []) as $period): ?>
-                  <input class="form-input subject-hours-input" type="number" name="subject_hours[<?= htmlspecialchars((string) $subject['id']) ?>][<?= htmlspecialchars((string) $period['id']) ?>]" min="0" max="40" value="3" aria-label="<?= htmlspecialchars((string) $subject['naam']) ?> <?= htmlspecialchars((string) $period['naam']) ?> uren per week">
+                  <div class="subject-period-cell">
+                    <input class="form-input subject-hours-input" type="number" name="subject_hours[<?= htmlspecialchars((string) $subject['id']) ?>][<?= htmlspecialchars((string) $period['id']) ?>]" min="0" max="40" value="3" aria-label="<?= htmlspecialchars((string) $subject['naam']) ?> <?= htmlspecialchars((string) $period['naam']) ?> uren per week">
+                    <label class="subject-block-check" title="Blokuren toegestaan in <?= htmlspecialchars((string) $period['naam']) ?>">
+                      <input type="checkbox" name="block_hour_subjects[<?= htmlspecialchars((string) $subject['id']) ?>][<?= htmlspecialchars((string) $period['id']) ?>]" value="1">
+                      <span>Blok</span>
+                    </label>
+                  </div>
                 <?php endforeach; ?>
               </div>
             <?php endforeach; ?>
@@ -1490,7 +1496,14 @@ $breakTypeLabel = static fn (string $type): string => $type === 'vakantie' ? 'Va
                     </label>
                     <?php foreach ($programPeriods as $period): ?>
                       <?php $hours = (int) (($existingSubject['periode_uren'] ?? [])[(string) $period['id']] ?? ($existingSubject['uren_per_week'] ?? 0)); ?>
-                      <input class="form-input subject-hours-input" type="number" name="subject_hours[<?= htmlspecialchars((string) $subject['id']) ?>][<?= htmlspecialchars((string) $period['id']) ?>]" min="0" max="40" value="<?= $hours ?>" aria-label="<?= htmlspecialchars((string) $subject['naam']) ?> <?= htmlspecialchars((string) $period['naam']) ?> uren per week">
+                      <?php $blockAllowed = (bool) (($existingSubject['periode_blokuren'] ?? [])[(string) $period['id']] ?? ($existingSubject['blokuur_toegestaan'] ?? false)); ?>
+                      <div class="subject-period-cell">
+                        <input class="form-input subject-hours-input" type="number" name="subject_hours[<?= htmlspecialchars((string) $subject['id']) ?>][<?= htmlspecialchars((string) $period['id']) ?>]" min="0" max="40" value="<?= $hours ?>" aria-label="<?= htmlspecialchars((string) $subject['naam']) ?> <?= htmlspecialchars((string) $period['naam']) ?> uren per week">
+                        <label class="subject-block-check" title="Blokuren toegestaan in <?= htmlspecialchars((string) $period['naam']) ?>">
+                          <input type="checkbox" name="block_hour_subjects[<?= htmlspecialchars((string) $subject['id']) ?>][<?= htmlspecialchars((string) $period['id']) ?>]" value="1" <?= $blockAllowed ? 'checked' : '' ?>>
+                          <span>Blok</span>
+                        </label>
+                      </div>
                     <?php endforeach; ?>
                   </div>
                 <?php endforeach; ?>

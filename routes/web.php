@@ -44,10 +44,21 @@ return static function (Router $router): void {
 
     $router->get('/login', [$login, 'show']);
     $router->post('/login', [$login, 'store']);
+    $twoFactor = new \Roostar\Modules\Auth\Controllers\TwoFactorController();
+    $router->get('/2fa/setup', [$twoFactor, 'showSetup']);
+    $router->post('/2fa/setup', [$twoFactor, 'storeSetup']);
+    $router->get('/2fa/challenge', [$twoFactor, 'showChallenge']);
+    $router->post('/2fa/challenge', [$twoFactor, 'storeChallenge']);
     $router->get('/logout', $logout);
     $router->get('/wachtwoord-wijzigen', [$passwordChange, 'show'], $authRequired);
     $router->post('/wachtwoord-wijzigen', [$passwordChange, 'store'], $authRequired);
     $router->get('/profiel', [$profile, 'show'], $authRequired);
+    $loginVisual = new \Roostar\Modules\Auth\Controllers\LoginVisualController();
+    $router->get('/settings', [$loginVisual, 'show'], $authRequired);
+    $router->post('/settings/login-visual', [$loginVisual, 'store'], $authRequired);
+    $router->post('/settings/login-visual/reset', [$loginVisual, 'reset'], $authRequired);
+    $router->post('/settings/school-logo', [$loginVisual, 'storeLogo'], $authRequired);
+    $router->post('/settings/school-logo/reset', [$loginVisual, 'resetLogo'], $authRequired);
     $router->post('/notifications/read', [$notifications, 'markRead'], $authRequired);
 
     $router->get('/', static function (): Response {
@@ -121,6 +132,7 @@ return static function (Router $router): void {
     $router->post('/gebruikers/deactiveer', [$users, 'deactivate'], $authRequired);
     $router->post('/gebruikers/heractiveer', [$users, 'reactivate'], $authRequired);
     $router->post('/gebruikers/reset-wachtwoord', [$users, 'resetPassword'], $authRequired);
+    $router->post('/gebruikers/reset-2fa', [$users, 'resetTwoFactor'], $authRequired);
     $router->get('/auditlog', [$audit, 'index'], $authRequired);
     $router->get('/ziekte', [$absence, 'index'], $authRequired);
     $router->post('/ziekte', [$absence, 'store'], $authRequired);
@@ -145,7 +157,6 @@ return static function (Router $router): void {
 
     foreach ([
         '/stage' => 'stage',
-        '/settings' => 'settings',
     ] as $path => $key) {
         $router->get($path, static fn () => $placeholder->show($key), $authRequired);
     }

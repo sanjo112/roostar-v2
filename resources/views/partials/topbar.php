@@ -46,6 +46,11 @@ $formatNotificationTime = static function (array $notification): string {
 <div class="topbar">
   <div class="page-title"><?= htmlspecialchars($pageTitle ?? 'Dashboard') ?></div>
   <div class="topbar-right">
+    <?php if (!empty($schoolLogoPath)): ?>
+      <span class="topbar-school-logo" title="Schoollogo">
+        <img src="<?= htmlspecialchars($assetVersion((string) $schoolLogoPath)) ?>" alt="Schoollogo">
+      </span>
+    <?php endif; ?>
     <button class="icon-btn" title="Help" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4M12 17h.01"/></svg>
     </button>

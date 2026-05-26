@@ -11,6 +11,7 @@ use Roostar\Modules\Rosters\Engine\Optimization\ReduceGapsOptimizer;
 use Roostar\Modules\Rosters\Engine\Optimization\ReduceMovesOptimizer;
 use Roostar\Modules\Rosters\Engine\Rules\Hard\AllLessonsScheduledRule;
 use Roostar\Modules\Rosters\Engine\Rules\Hard\AvailabilityRule;
+use Roostar\Modules\Rosters\Engine\Rules\Hard\BlockHoursAllowedRule;
 use Roostar\Modules\Rosters\Engine\Rules\Hard\ClassGroupNotDoubleBookedRule;
 use Roostar\Modules\Rosters\Engine\Rules\Hard\RoomNotDoubleBookedRule;
 use Roostar\Modules\Rosters\Engine\Rules\Hard\TeacherNotDoubleBookedRule;
@@ -32,6 +33,7 @@ final class SchedulingEngineFactory
             new ClassGroupNotDoubleBookedRule(),
             new RoomNotDoubleBookedRule(),
             new AvailabilityRule(),
+            new BlockHoursAllowedRule(),
             new StudentGapRule(),
             new TeacherMoveRule(),
             new SubjectSpreadRule(),
@@ -51,4 +53,3 @@ final class SchedulingEngineFactory
         );
     }
 }
-

@@ -3,6 +3,10 @@ $overview = $overview ?? ['views' => ['class' => []], 'days' => [], 'dates' => [
 $views = $overview['views'] ?? ['class' => [], 'teacher' => [], 'room' => []];
 $selectedLabel = (string) ($views['class'][0]['label'] ?? 'Rooster');
 $selectedSub = (string) ($views['class'][0]['sub'] ?? '');
+$issues = $overview['issues'] ?? [];
+$issueActions = $overview['issue_actions'] ?? [];
+$issueCount = count($issues);
+$schoolName = !empty($overview['period']['school_naam']) ? (string) $overview['period']['school_naam'] : 'Geen periode gevonden';
 $yearOptions = range(max(2020, (int) $year - 3), min(2035, (int) $year + 5));
 ?>
 
@@ -14,10 +18,19 @@ $yearOptions = range(max(2020, (int) $year - 3), min(2035, (int) $year + 5));
       <p class="muted">Week <?= (int) $week ?><?= !empty($overview['period']['naam']) ? ' · ' . htmlspecialchars((string) $overview['period']['naam']) : '' ?>. Ziekte en vervanging liggen bovenop het basisrooster.</p>
     </div>
     <div class="generation-header-status">
-      <div class="generation-header-status-copy">
-        <strong><?= count($overview['issues'] ?? []) ?> aandachtspunt(en)</strong>
-        <span><?= !empty($overview['period']['school_naam']) ? htmlspecialchars((string) $overview['period']['school_naam']) : 'Geen periode gevonden' ?></span>
-      </div>
+      <?php if ($issueCount > 0): ?>
+        <button class="generation-header-status-button" type="button" data-open-modal="week-issues-modal" aria-haspopup="dialog">
+          <span class="generation-header-status-copy">
+            <strong><?= (int) $issueCount ?> aandachtspunt(en)</strong>
+            <span><?= htmlspecialchars($schoolName) ?></span>
+          </span>
+        </button>
+      <?php else: ?>
+        <div class="generation-header-status-copy">
+          <strong>0 aandachtspunt(en)</strong>
+          <span><?= htmlspecialchars($schoolName) ?></span>
+        </div>
+      <?php endif; ?>
     </div>
   </div>
 
@@ -89,8 +102,8 @@ $yearOptions = range(max(2020, (int) $year - 3), min(2035, (int) $year + 5));
               <select class="form-select" data-roster-target aria-label="Kies rooster"></select>
               <button class="icon-btn" type="button" data-roster-next aria-label="Volgende">&gt;</button>
             </span>
+            <a class="btn btn-outline roster-pdf-export" href="/rooster/export/pdf?week=<?= (int) $week ?>&jaar=<?= (int) $year ?>" target="_blank" rel="noopener">PDF export</a>
           </div>
-          <a class="btn btn-outline" href="/rooster/export/pdf?week=<?= (int) $week ?>&jaar=<?= (int) $year ?>" target="_blank" rel="noopener">PDF export</a>
         </div>
       </div>
 
@@ -399,7 +412,49 @@ $yearOptions = range(max(2020, (int) $year - 3), min(2035, (int) $year + 5));
     </script>
   <?php endif; ?>
 
-  <?php if (!empty($overview['issues'])): ?>
+  <?php if (!empty($issues)): ?>
+    <div id="week-issues-modal" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="week-issues-title" hidden>
+      <div class="modal modal-lg app-modal week-issues-modal">
+        <div class="modal-head">
+          <div>
+            <div class="eyebrow">Aandachtspunten</div>
+            <div id="week-issues-title" class="modal-title">Week <?= (int) $week ?> · <?= (int) $issueCount ?> punt(en)</div>
+          </div>
+          <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="editor-issue-list week-issues-list">
+            <?php foreach ($issues as $issue): ?>
+              <?php $issueAction = $issueActions[(string) $issue] ?? null; ?>
+              <div class="editor-issue soft">
+                <div class="issue-copy">
+                  <strong>Actie nodig</strong>
+                  <span><?= htmlspecialchars((string) $issue) ?></span>
+                </div>
+                <?php if (is_array($issueAction) && !empty($issueAction['url'])): ?>
+                  <div class="issue-action-row">
+                    <a class="btn btn-outline btn-sm issue-action-link" href="<?= htmlspecialchars((string) $issueAction['url']) ?>"><?= htmlspecialchars((string) ($issueAction['label'] ?? 'Ga naar melding')) ?></a>
+                    <?php if (!empty($issueAction['absence_id']) && !empty($issueAction['lesson_id']) && !empty($issueAction['date'])): ?>
+                      <form method="post" action="/ziekte/uitroosteren" class="issue-action-form">
+                        <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                        <input type="hidden" name="ziekte_id" value="<?= htmlspecialchars((string) $issueAction['absence_id']) ?>">
+                        <input type="hidden" name="les_id" value="<?= htmlspecialchars((string) $issueAction['lesson_id']) ?>">
+                        <input type="hidden" name="datum" value="<?= htmlspecialchars((string) $issueAction['date']) ?>">
+                        <button class="btn btn-dark btn-sm" type="submit">Uitroosteren</button>
+                      </form>
+                    <?php endif; ?>
+                  </div>
+                <?php endif; ?>
+              </div>
+            <?php endforeach; ?>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-outline" type="button" data-close-modal>Sluiten</button>
+        </div>
+      </div>
+    </div>
+
     <section class="card generation-status-card mt-card">
       <div class="generation-panel-head">
         <div>
@@ -408,8 +463,28 @@ $yearOptions = range(max(2020, (int) $year - 3), min(2035, (int) $year + 5));
         </div>
       </div>
       <div class="editor-issue-list">
-        <?php foreach ($overview['issues'] as $issue): ?>
-          <div class="editor-issue soft"><strong>Actie nodig</strong><span><?= htmlspecialchars((string) $issue) ?></span></div>
+        <?php foreach ($issues as $issue): ?>
+          <?php $issueAction = $issueActions[(string) $issue] ?? null; ?>
+          <div class="editor-issue soft">
+            <div class="issue-copy">
+              <strong>Actie nodig</strong>
+              <span><?= htmlspecialchars((string) $issue) ?></span>
+            </div>
+            <?php if (is_array($issueAction) && !empty($issueAction['url'])): ?>
+              <div class="issue-action-row">
+                <a class="btn btn-outline btn-sm issue-action-link" href="<?= htmlspecialchars((string) $issueAction['url']) ?>"><?= htmlspecialchars((string) ($issueAction['label'] ?? 'Ga naar melding')) ?></a>
+                <?php if (!empty($issueAction['absence_id']) && !empty($issueAction['lesson_id']) && !empty($issueAction['date'])): ?>
+                  <form method="post" action="/ziekte/uitroosteren" class="issue-action-form">
+                    <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+                    <input type="hidden" name="ziekte_id" value="<?= htmlspecialchars((string) $issueAction['absence_id']) ?>">
+                    <input type="hidden" name="les_id" value="<?= htmlspecialchars((string) $issueAction['lesson_id']) ?>">
+                    <input type="hidden" name="datum" value="<?= htmlspecialchars((string) $issueAction['date']) ?>">
+                    <button class="btn btn-dark btn-sm" type="submit">Uitroosteren</button>
+                  </form>
+                <?php endif; ?>
+              </div>
+            <?php endif; ?>
+          </div>
         <?php endforeach; ?>
       </div>
     </section>

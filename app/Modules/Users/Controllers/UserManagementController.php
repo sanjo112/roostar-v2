@@ -15,6 +15,7 @@ use Roostar\Core\Notifications\NotificationBag;
 use Roostar\Core\Security\Csrf;
 use Roostar\Core\Security\Encryptor;
 use Roostar\Core\View\AppView;
+use Roostar\Modules\Auth\Repositories\TwoFactorRepository;
 use Roostar\Modules\Auth\Services\AuthSession;
 use Roostar\Modules\Auth\Services\PasswordService;
 use Roostar\Modules\Schools\Repositories\SchoolRepository;
@@ -121,6 +122,7 @@ final class UserManagementController
         $password = (string) $request->input('password', '');
         $schoolId = $request->string('school_id');
         $permissions = $this->selectedPermissions($request);
+        $twoFactorRequired = $request->string('two_factor_required') === '1';
 
         if ($name === '' || $email === '' || $password === '' || $role === '' || $schoolId === '') {
             NotificationBag::warning('Vul alle verplichte velden in.');
@@ -190,11 +192,18 @@ final class UserManagementController
 
         $grants = new PermissionGrantRepository($db);
         $grants->replaceForUser($userId, $this->grantsForPermissions($permissions, $schoolId));
+        $twoFactors = new TwoFactorRepository($db);
+        if ($twoFactorRequired) {
+            $twoFactors->requireSetup($userId);
+        } else {
+            $twoFactors->disable($userId);
+        }
 
         $audit = new AuditLogger($db);
         $audit->record('users.created', $user->id, 'user', $userId, [
             'target_role' => $role,
             'school_id' => $schoolId,
+            'two_factor_required' => $twoFactorRequired,
         ], $ipAddress);
 
         unset($_SESSION['user_create_error']);
@@ -227,6 +236,7 @@ final class UserManagementController
         $email = $request->string('email');
         $schoolId = $request->string('school_id');
         $permissions = $this->selectedPermissions($request);
+        $twoFactorRequired = $request->string('two_factor_required') === '1';
 
         if ($targetUserId === '' || $name === '' || $email === '' || $role === '' || $schoolId === '') {
             NotificationBag::warning('Vul alle verplichte velden in.');
@@ -299,10 +309,20 @@ final class UserManagementController
         ]);
 
         (new PermissionGrantRepository($db))->replaceForUser($targetUserId, $this->grantsForPermissions($permissions, $schoolId));
+        $twoFactors = new TwoFactorRepository($db);
+        if ($twoFactorRequired) {
+            $twoFactor = $twoFactors->get($targetUserId);
+            if (!$twoFactor || (int) ($twoFactor['required'] ?? 0) !== 1) {
+                $twoFactors->requireSetup($targetUserId);
+            }
+        } else {
+            $twoFactors->disable($targetUserId);
+        }
         (new AuditLogger($db))->record('users.updated', $user->id, 'user', $targetUserId, [
             'target_role' => $role,
             'school_id' => $schoolId,
             'permissions' => $permissions,
+            'two_factor_required' => $twoFactorRequired,
         ], $ipAddress);
 
         NotificationBag::success('Gebruiker is bijgewerkt.');
@@ -369,6 +389,33 @@ final class UserManagementController
                 'name' => (string) $target['naam'],
                 'email' => (string) $target['email'],
             ];
+
+            return $this->redirectToUsers($request);
+        });
+    }
+
+    public function resetTwoFactor(Request $request): Response
+    {
+        return $this->manageExistingUser($request, 'users.two_factor_reset', function (array $target, UserDirectoryRepository $users) use ($request): Response {
+            unset($users);
+            $actor = AuthSession::userContext();
+
+            if (!$actor) {
+                return Response::redirect('/login');
+            }
+
+            if (!$target['active']) {
+                NotificationBag::error('Je kunt 2FA niet resetten voor een inactieve gebruiker.');
+                return $this->redirectToUsers($request);
+            }
+
+            (new TwoFactorRepository(Connection::get()))->requireSetup((string) $target['id']);
+            $this->auditAction('users.two_factor_reset', $actor->id, (string) $target['id'], [
+                'target_role' => $target['role'],
+                'school_id' => $target['school_id'],
+            ], $request);
+
+            NotificationBag::success('2FA is gereset. De gebruiker moet 2FA opnieuw instellen bij de volgende login.');
 
             return $this->redirectToUsers($request);
         });

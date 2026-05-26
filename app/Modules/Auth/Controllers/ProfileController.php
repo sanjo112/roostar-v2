@@ -33,6 +33,7 @@ final class ProfileController
             'activePage' => 'profiel',
             'pageTitle' => 'Mijn profiel',
             'profile' => $profile,
+            'userContext' => $user,
         ]));
     }
 }

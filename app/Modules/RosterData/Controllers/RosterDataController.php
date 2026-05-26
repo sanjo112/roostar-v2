@@ -108,7 +108,7 @@ final class RosterDataController
 
     public function storePeriod(Request $request): Response
     {
-        return $this->store($request, '/stamdata?tab=schooljaren', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+        return $this->store($request, $this->periodManagerRedirect($request), function (RosterDataRepository $repository, string $schoolId) use ($request): void {
             $schoolYearId = $request->string('schooljaar_id');
             $name = $request->string('naam');
             [$weekFromYear, $weekFrom] = $this->weekSelection($request, 'week_van');
@@ -129,7 +129,7 @@ final class RosterDataController
 
     public function updatePeriod(Request $request): Response
     {
-        return $this->store($request, '/stamdata?tab=schooljaren', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+        return $this->store($request, $this->periodManagerRedirect($request), function (RosterDataRepository $repository, string $schoolId) use ($request): void {
             $periodId = $request->string('periode_id');
             $schoolYearId = $request->string('schooljaar_id');
             $name = $request->string('naam');
@@ -151,7 +151,7 @@ final class RosterDataController
 
     public function deletePeriod(Request $request): Response
     {
-        return $this->store($request, '/stamdata?tab=schooljaren', function (RosterDataRepository $repository, string $schoolId) use ($request): void {
+        return $this->store($request, $this->periodManagerRedirect($request), function (RosterDataRepository $repository, string $schoolId) use ($request): void {
             $periodId = $request->string('periode_id');
             $schoolYearId = $request->string('schooljaar_id');
 
@@ -283,6 +283,7 @@ final class RosterDataController
             $subjectIds = $request->input('subject_ids', []);
             $subjectHours = $request->input('subject_hours', []);
             $electiveSubjectIds = $request->input('elective_subject_ids', []);
+            $blockHourSubjects = $request->input('block_hour_subjects', []);
             $repository->createProgram(
                 $schoolId,
                 $name,
@@ -291,6 +292,7 @@ final class RosterDataController
                 is_array($subjectIds) ? $subjectIds : [],
                 is_array($electiveSubjectIds) ? $electiveSubjectIds : [],
                 is_array($subjectHours) ? $subjectHours : [],
+                is_array($blockHourSubjects) ? $blockHourSubjects : [],
             );
             NotificationBag::success('Opleiding is aangemaakt.');
         }, 'roster_data.program_created');
@@ -313,6 +315,7 @@ final class RosterDataController
             $subjectIds = $request->input('subject_ids', []);
             $subjectHours = $request->input('subject_hours', []);
             $electiveSubjectIds = $request->input('elective_subject_ids', []);
+            $blockHourSubjects = $request->input('block_hour_subjects', []);
             $repository->updateProgram(
                 $programId,
                 $schoolId,
@@ -322,6 +325,7 @@ final class RosterDataController
                 is_array($subjectIds) ? $subjectIds : [],
                 is_array($electiveSubjectIds) ? $electiveSubjectIds : [],
                 is_array($subjectHours) ? $subjectHours : [],
+                is_array($blockHourSubjects) ? $blockHourSubjects : [],
                 $request->string('active') === '1',
             );
             NotificationBag::success('Opleiding is bijgewerkt.');
@@ -947,6 +951,17 @@ final class RosterDataController
 
             return [];
         }
+    }
+
+    private function periodManagerRedirect(Request $request): string
+    {
+        $schoolYearId = $request->string('schooljaar_id');
+
+        if ($schoolYearId === '') {
+            return '/stamdata?tab=schooljaren';
+        }
+
+        return '/stamdata?tab=schooljaren&open_modal=' . rawurlencode('period-manage-' . $schoolYearId);
     }
 
     private function store(Request $request, string $redirectPath, callable $callback, string $auditAction): Response

@@ -44,6 +44,19 @@ document.addEventListener('DOMContentLoaded', closeRestoredModals);
 window.addEventListener('pageshow', closeRestoredModals);
 
 document.addEventListener('DOMContentLoaded', () => {
+  const modalId = new URLSearchParams(window.location.search).get('open_modal') || '';
+  const modal = modalId ? document.getElementById(modalId) : null;
+
+  if (!modal?.classList.contains('modal-backdrop')) {
+    return;
+  }
+
+  modal.hidden = false;
+  document.body.classList.add('has-modal-open');
+  modal.querySelector('input, select, textarea, button')?.focus();
+});
+
+document.addEventListener('DOMContentLoaded', () => {
   const source = document.getElementById('roostar-notifications');
 
   if (!source?.textContent) {

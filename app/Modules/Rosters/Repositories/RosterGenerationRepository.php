@@ -437,6 +437,7 @@ final class RosterGenerationRepository
                 v.naam_encrypted,
                 v.code,
                 COALESCE(oph.uren_per_week, ov.uren_per_week) AS uren_per_week,
+                COALESCE(oph.blokuur_toegestaan, ov.blokuur_toegestaan) AS blokuur_toegestaan,
                 0 AS keuzevak,
                 :student_count AS leerling_count
             FROM opleiding_vakken ov
@@ -466,6 +467,7 @@ final class RosterGenerationRepository
                 v.naam_encrypted,
                 v.code,
                 COALESCE(oph.uren_per_week, ov.uren_per_week) AS uren_per_week,
+                COALESCE(oph.blokuur_toegestaan, ov.blokuur_toegestaan) AS blokuur_toegestaan,
                 1 AS keuzevak,
                 COUNT(DISTINCT lkv.user_id) AS leerling_count
             FROM opleiding_vakken ov
@@ -481,7 +483,7 @@ final class RosterGenerationRepository
               AND ov.keuzevak = 1
               AND v.school_id = :school_id
               AND v.active = 1
-            GROUP BY v.id, v.naam_encrypted, v.code, ov.uren_per_week, oph.uren_per_week
+            GROUP BY v.id, v.naam_encrypted, v.code, ov.uren_per_week, ov.blokuur_toegestaan, oph.uren_per_week, oph.blokuur_toegestaan
             HAVING leerling_count > 0
             ORDER BY v.code IS NULL, v.code, v.created_at
         ");
@@ -507,6 +509,7 @@ final class RosterGenerationRepository
                 ],
                 'hoursPerWeek' => max(0, (int) ($row['uren_per_week'] ?? 0)),
                 'studentCount' => max(1, (int) ($row['leerling_count'] ?? 0)),
+                'allowBlockHours' => (int) ($row['blokuur_toegestaan'] ?? 0) === 1,
             ];
         }, $rows);
     }

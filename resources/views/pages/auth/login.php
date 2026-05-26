@@ -1,9 +1,22 @@
 <?php
+use Roostar\Core\Database\Connection;
+use Roostar\Modules\Auth\Services\SchoolLoginVisualService;
+
 $assetVersion = static function (string $path): string {
     $fullPath = dirname(__DIR__, 4) . '/public' . $path;
 
     return is_file($fullPath) ? $path . '?v=' . filemtime($fullPath) : $path;
 };
+$loginVisual = '/assets/images/login-visual.png';
+try {
+    $cookieVisual = (new SchoolLoginVisualService(Connection::get(), $_ENV['APP_KEY'] ?? ''))
+        ->pathFromCookie($_COOKIE[SchoolLoginVisualService::COOKIE_NAME] ?? null);
+    if ($cookieVisual !== null) {
+        $loginVisual = $cookieVisual;
+    }
+} catch (Throwable) {
+    $loginVisual = '/assets/images/login-visual.png';
+}
 ?>
 <!doctype html>
 <html lang="nl">
@@ -43,7 +56,7 @@ $assetVersion = static function (string $path): string {
       overflow: hidden;
       background:
         linear-gradient(180deg, rgba(10, 24, 44, 0.04) 0%, rgba(10, 24, 44, 0.22) 48%, rgba(7, 17, 31, 0.72) 100%),
-        url('/assets/images/login-visual.png') center / cover no-repeat;
+        url('<?= htmlspecialchars($assetVersion($loginVisual)) ?>') center / cover no-repeat;
     }
 
     .login-visual::after {

@@ -62,11 +62,15 @@ final class UserDirectoryRepository
                 u.active,
                 u.last_login_at,
                 u.created_at,
+                tf.required AS two_factor_required,
+                tf.enabled AS two_factor_enabled,
+                tf.secret AS two_factor_secret,
                 s.naam_encrypted AS school_naam_encrypted,
                 GROUP_CONCAT(pg.permission ORDER BY pg.permission SEPARATOR ',') AS permissions
             FROM users u
             LEFT JOIN scholen s ON s.id = u.school_id
             LEFT JOIN permission_grants pg ON pg.user_id = u.id
+            LEFT JOIN user_2fa tf ON tf.user_id = u.id
             WHERE {$scopeSql}
             GROUP BY u.id, s.id
             ORDER BY u.role, u.email
@@ -104,11 +108,15 @@ final class UserDirectoryRepository
                 u.active,
                 u.last_login_at,
                 u.created_at,
+                tf.required AS two_factor_required,
+                tf.enabled AS two_factor_enabled,
+                tf.secret AS two_factor_secret,
                 s.naam_encrypted AS school_naam_encrypted,
                 GROUP_CONCAT(pg.permission ORDER BY pg.permission SEPARATOR ',') AS permissions
             FROM users u
             LEFT JOIN scholen s ON s.id = u.school_id
             LEFT JOIN permission_grants pg ON pg.user_id = u.id
+            LEFT JOIN user_2fa tf ON tf.user_id = u.id
             WHERE {$scopeSql}
               AND u.id = :target_user_id
             GROUP BY u.id, s.id
@@ -229,6 +237,9 @@ final class UserDirectoryRepository
             'active' => (bool) $row['active'],
             'last_login_at' => $row['last_login_at'],
             'created_at' => $row['created_at'],
+            'two_factor_required' => (bool) ($row['two_factor_required'] ?? false),
+            'two_factor_enabled' => (bool) ($row['two_factor_enabled'] ?? false),
+            'two_factor_configured' => !empty($row['two_factor_secret']) && (bool) ($row['two_factor_enabled'] ?? false),
             'can_generate_roster' => in_array('roster.generate', $permissions, true),
             'permissions' => $permissions,
         ];

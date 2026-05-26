@@ -59,7 +59,8 @@ final class RosterWeekRepository
                 'dates' => $dates,
                 'days' => self::DAYS,
                 'views' => ['class' => [], 'teacher' => [], 'room' => []],
-                'issues' => ['Geen periode gevonden voor week ' . $week . '.'],
+                'issues' => [],
+                'issue_actions' => [],
             ];
         }
 
@@ -71,6 +72,7 @@ final class RosterWeekRepository
         $replacements = $this->replacementsForWeek($dates);
         $views = ['class' => [], 'teacher' => [], 'room' => []];
         $issues = [];
+        $issueActions = [];
 
         foreach ($lessons as $index => $lesson) {
             $date = $dates[(string) $lesson['dag']] ?? null;
@@ -103,7 +105,15 @@ final class RosterWeekRepository
             }
 
             if ($absence !== null && $replacement === null) {
-                $issues[] = $lesson['leraar_naam'] . ' ziek: ' . $lesson['vak_code'] . ' ' . $lesson['klas_naam'] . ' op ' . $lesson['dag'] . ' uur ' . $lesson['lesuur'];
+                $issue = $lesson['leraar_naam'] . ' ziek: ' . $lesson['vak_code'] . ' ' . $lesson['klas_naam'] . ' op ' . $lesson['dag'] . ' uur ' . $lesson['lesuur'];
+                $issues[] = $issue;
+                $issueActions[$issue] = [
+                    'label' => 'Ga naar melding',
+                    'url' => '/ziekte?id=' . rawurlencode((string) $absence['id']) . '#impact-' . (string) $lesson['id'] . '-' . (string) $date,
+                    'absence_id' => (string) $absence['id'],
+                    'lesson_id' => (string) $lesson['id'],
+                    'date' => (string) $date,
+                ];
             }
 
             $viewLesson = [
@@ -148,6 +158,7 @@ final class RosterWeekRepository
             'days' => self::DAYS,
             'views' => array_map(static fn (array $items): array => array_values($items), $views),
             'issues' => array_values(array_unique($issues)),
+            'issue_actions' => $issueActions,
         ];
     }
 

@@ -11,7 +11,9 @@
         <span><?= $generated ? 'Het rooster staat hieronder in de opgeslagen overview' : 'Kies een periode en start de generator' ?></span>
       </div>
       <div class="generation-orb-shell" aria-hidden="true">
-        <span class="generation-header-status-video"></span>
+        <video class="generation-header-status-video" autoplay muted loop playsinline preload="metadata">
+          <source src="/assets/images/orb.mp4" type="video/mp4">
+        </video>
       </div>
     </div>
   </div>
@@ -483,7 +485,7 @@
             <?php endforeach; ?>
           </div>
 
-          <div class="editor-issue-list">
+          <div class="editor-issue-list engine-explanation-list">
             <?php foreach (array_slice($engineResult->explanations ?? [], 0, 4) as $explanation): ?>
               <div class="editor-issue <?= $explanation['severity'] === 'hard' ? 'hard' : 'soft' ?>">
                 <strong><?= htmlspecialchars((string) $explanation['rule']) ?></strong>

@@ -778,7 +778,7 @@ final class RosterDataRepository
         return $preferences;
     }
 
-    public function createProgram(string $schoolId, string $name, string $code, string $level, array $subjectIds, array $electiveSubjectIds = [], array $subjectHours = []): void
+    public function createProgram(string $schoolId, string $name, string $code, string $level, array $subjectIds, array $electiveSubjectIds = [], array $subjectHours = [], array $blockHourSubjects = []): void
     {
         $programId = $this->createEncrypted('opleidingen', [
             'school_id' => $schoolId,
@@ -787,10 +787,10 @@ final class RosterDataRepository
             'niveau' => $level !== '' ? $level : null,
         ]);
 
-        $this->syncProgramSubjects($programId, $schoolId, $subjectIds, $electiveSubjectIds, $subjectHours);
+        $this->syncProgramSubjects($programId, $schoolId, $subjectIds, $electiveSubjectIds, $subjectHours, $blockHourSubjects);
     }
 
-    public function updateProgram(string $programId, string $schoolId, string $name, string $code, string $level, array $subjectIds, array $electiveSubjectIds, array $subjectHours, bool $active): void
+    public function updateProgram(string $programId, string $schoolId, string $name, string $code, string $level, array $subjectIds, array $electiveSubjectIds, array $subjectHours, array $blockHourSubjects, bool $active): void
     {
         if (!$this->programBelongsToSchool($programId, $schoolId)) {
             throw new \InvalidArgumentException('Kies een opleiding van dezelfde school.');
@@ -821,7 +821,7 @@ final class RosterDataRepository
         $stmt->execute(['opleiding_id' => $programId]);
         $stmt = $this->db->prepare("DELETE FROM opleiding_vak_periode_uren WHERE opleiding_id = :opleiding_id");
         $stmt->execute(['opleiding_id' => $programId]);
-        $this->syncProgramSubjects($programId, $schoolId, $subjectIds, $electiveSubjectIds, $subjectHours);
+        $this->syncProgramSubjects($programId, $schoolId, $subjectIds, $electiveSubjectIds, $subjectHours, $blockHourSubjects);
     }
 
     public function createLocation(string $schoolId, string $name, bool $external): void
@@ -1040,10 +1040,11 @@ final class RosterDataRepository
         $stmt->execute($values);
     }
 
-    private function syncProgramSubjects(string $programId, string $schoolId, array $subjectIds, array $electiveSubjectIds = [], array $subjectHours = []): void
+    private function syncProgramSubjects(string $programId, string $schoolId, array $subjectIds, array $electiveSubjectIds = [], array $subjectHours = [], array $blockHourSubjects = []): void
     {
         $subjectIds = array_values(array_unique(array_filter($subjectIds, static fn (mixed $id): bool => is_string($id) && $id !== '')));
         $electiveSubjectIds = array_values(array_unique(array_filter($electiveSubjectIds, static fn (mixed $id): bool => is_string($id) && $id !== '')));
+        $blockHoursBySubject = $this->normalBlockHoursForSubject($blockHourSubjects);
 
         if ($subjectIds === []) {
             return;
@@ -1052,8 +1053,8 @@ final class RosterDataRepository
         $validSubjectIds = $this->subjectIdsForSchool($schoolId, $subjectIds);
         $electiveSubjectIds = array_values(array_intersect($validSubjectIds, $electiveSubjectIds));
         $stmt = $this->db->prepare("
-            INSERT IGNORE INTO opleiding_vakken (opleiding_id, vak_id, uren_per_week, keuzevak, created_at)
-            VALUES (:opleiding_id, :vak_id, :uren_per_week, :keuzevak, NOW())
+            INSERT IGNORE INTO opleiding_vakken (opleiding_id, vak_id, uren_per_week, keuzevak, blokuur_toegestaan, created_at)
+            VALUES (:opleiding_id, :vak_id, :uren_per_week, :keuzevak, :blokuur_toegestaan, NOW())
         ");
 
         foreach ($validSubjectIds as $subjectId) {
@@ -1063,19 +1064,24 @@ final class RosterDataRepository
                 'vak_id' => $subjectId,
                 'uren_per_week' => $this->defaultHoursForSubject($hoursByPeriod),
                 'keuzevak' => in_array($subjectId, $electiveSubjectIds, true) ? 1 : 0,
+                'blokuur_toegestaan' => !empty($blockHoursBySubject[$subjectId]) ? 1 : 0,
             ]);
         }
 
-        $periodIds = $this->periodIdsForSchool($schoolId, $this->periodIdsFromHours($subjectHours));
+        $periodIds = $this->periodIdsForSchool($schoolId, array_values(array_unique([
+            ...$this->periodIdsFromHours($subjectHours),
+            ...$this->periodIdsFromHours($blockHoursBySubject),
+        ])));
         if ($periodIds === []) {
             return;
         }
 
         $periodHoursStmt = $this->db->prepare("
-            INSERT INTO opleiding_vak_periode_uren (opleiding_id, vak_id, periode_id, uren_per_week, created_at, updated_at)
-            VALUES (:opleiding_id, :vak_id, :periode_id, :uren_per_week, NOW(), NOW())
+            INSERT INTO opleiding_vak_periode_uren (opleiding_id, vak_id, periode_id, uren_per_week, blokuur_toegestaan, created_at, updated_at)
+            VALUES (:opleiding_id, :vak_id, :periode_id, :uren_per_week, :blokuur_toegestaan, NOW(), NOW())
             ON DUPLICATE KEY UPDATE
                 uren_per_week = VALUES(uren_per_week),
+                blokuur_toegestaan = VALUES(blokuur_toegestaan),
                 updated_at = NOW()
         ");
 
@@ -1087,6 +1093,7 @@ final class RosterDataRepository
                     'vak_id' => $subjectId,
                     'periode_id' => $periodId,
                     'uren_per_week' => $hoursByPeriod[$periodId] ?? 0,
+                    'blokuur_toegestaan' => !empty($blockHoursBySubject[$subjectId][$periodId]) ? 1 : 0,
                 ]);
             }
         }
@@ -1229,6 +1236,27 @@ final class RosterDataRepository
         return $normalized;
     }
 
+    private function normalBlockHoursForSubject(array $blockHourSubjects): array
+    {
+        $normalized = [];
+
+        foreach ($blockHourSubjects as $subjectId => $periods) {
+            if (!is_string($subjectId) || !is_array($periods)) {
+                continue;
+            }
+
+            foreach ($periods as $periodId => $value) {
+                if (!is_string($periodId) || $periodId === '' || (string) $value !== '1') {
+                    continue;
+                }
+
+                $normalized[$subjectId][$periodId] = 1;
+            }
+        }
+
+        return $normalized;
+    }
+
     private function defaultHoursForSubject(array $hoursByPeriod): int
     {
         $positiveHours = array_values(array_filter($hoursByPeriod, static fn (int $hours): bool => $hours > 0));
@@ -1261,12 +1289,14 @@ final class RosterDataRepository
                 v.code,
                 ov.uren_per_week,
                 ov.keuzevak,
-                GROUP_CONCAT(CONCAT(oph.periode_id, ':', oph.uren_per_week) SEPARATOR ',') AS periode_uren
+                ov.blokuur_toegestaan,
+                GROUP_CONCAT(CONCAT(oph.periode_id, ':', oph.uren_per_week) SEPARATOR ',') AS periode_uren,
+                GROUP_CONCAT(CONCAT(oph.periode_id, ':', oph.blokuur_toegestaan) SEPARATOR ',') AS periode_blokuren
             FROM opleiding_vakken ov
             INNER JOIN vakken v ON v.id = ov.vak_id
             LEFT JOIN opleiding_vak_periode_uren oph ON oph.opleiding_id = ov.opleiding_id AND oph.vak_id = ov.vak_id
             WHERE ov.opleiding_id IN (" . implode(', ', $placeholders) . ")
-            GROUP BY ov.opleiding_id, v.id, v.naam_encrypted, v.code, ov.uren_per_week, ov.keuzevak
+            GROUP BY ov.opleiding_id, v.id, v.naam_encrypted, v.code, ov.uren_per_week, ov.keuzevak, ov.blokuur_toegestaan
             ORDER BY v.code IS NULL, v.code, v.created_at
         ");
         $stmt->execute($params);
@@ -1279,7 +1309,9 @@ final class RosterDataRepository
                 'code' => $row['code'],
                 'uren_per_week' => (int) ($row['uren_per_week'] ?? 0),
                 'keuzevak' => (int) ($row['keuzevak'] ?? 0) === 1,
+                'blokuur_toegestaan' => (int) ($row['blokuur_toegestaan'] ?? 0) === 1,
                 'periode_uren' => $this->parsePeriodHours((string) ($row['periode_uren'] ?? '')),
+                'periode_blokuren' => $this->parsePeriodFlags((string) ($row['periode_blokuren'] ?? '')),
             ];
         }
 
@@ -1301,6 +1333,23 @@ final class RosterDataRepository
         }
 
         return $hours;
+    }
+
+    private function parsePeriodFlags(string $value): array
+    {
+        if ($value === '') {
+            return [];
+        }
+
+        $flags = [];
+        foreach (explode(',', $value) as $entry) {
+            [$periodId, $enabled] = array_pad(explode(':', $entry, 2), 2, null);
+            if (is_string($periodId) && $periodId !== '') {
+                $flags[$periodId] = (int) $enabled === 1;
+            }
+        }
+
+        return $flags;
     }
 
     private function subjectsByRoom(array $roomIds): array

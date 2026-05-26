@@ -19,7 +19,7 @@ use Roostar\Modules\Rosters\Engine\DemoSchedulingInputFactory;
 use Roostar\Modules\Rosters\Engine\SchedulingEngineFactory;
 use Roostar\Modules\Rosters\Repositories\RosterGenerationRepository;
 use Roostar\Modules\Rosters\Repositories\RosterWeekRepository;
-use Roostar\Modules\Rosters\Services\AlgorithmicRosterGenerator;
+use Roostar\Modules\Rosters\Services\EngineRosterGenerator;
 use Roostar\Modules\Rosters\Services\RosterValidator;
 
 final class RosterController
@@ -35,7 +35,7 @@ final class RosterController
         $db = Connection::get();
         $repository = new RosterWeekRepository($db, new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
         $year = $request->string('jaar') !== '' ? (int) $request->string('jaar') : (int) date('o');
-        $week = $request->string('week') !== '' ? (int) $request->string('week') : $repository->defaultWeek($user);
+        $week = $request->string('week') !== '' ? (int) $request->string('week') : (int) date('W');
         $week = max(1, min(53, $week));
 
         return Response::html(AppView::render('rosters/week', [
@@ -61,7 +61,7 @@ final class RosterController
 
         $repository = new RosterWeekRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
         $year = $request->string('jaar') !== '' ? (int) $request->string('jaar') : (int) date('o');
-        $week = $request->string('week') !== '' ? (int) $request->string('week') : $repository->defaultWeek($user);
+        $week = $request->string('week') !== '' ? (int) $request->string('week') : (int) date('W');
         $week = max(1, min(53, $week));
 
         return Response::html(View::render('pages/rosters/pdf', [
@@ -138,7 +138,7 @@ final class RosterController
             } else {
                 try {
                     $constraints = $generationRepository->constraintsForPeriod($user, $selectedPeriodId);
-                    $result = (new AlgorithmicRosterGenerator())->generate($constraints);
+                    $result = (new EngineRosterGenerator())->generate($constraints);
                     $validation = (new RosterValidator())->validate($constraints, $result);
 
                     if (!$validation['success']) {
@@ -399,4 +399,3 @@ final class RosterController
         ];
     }
 }
-

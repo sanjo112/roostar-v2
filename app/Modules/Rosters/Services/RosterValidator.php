@@ -15,6 +15,7 @@ final class RosterValidator
         $hoursByGroup = [];
         $teacherDayHours = [];
         $teacherWeekHours = [];
+        $classSubjectDayPeriods = [];
 
         foreach ($result['lessons'] ?? [] as $lesson) {
             $slotKey = (string) $lesson['slot']['dayKey'] . '-' . (string) $lesson['slot']['period'];
@@ -43,6 +44,7 @@ final class RosterValidator
             $hoursByGroup[$group['id']] = ($hoursByGroup[$group['id']] ?? 0) + 1;
             $teacherDayHours[$teacher['id']][$day] = ($teacherDayHours[$teacher['id']][$day] ?? 0) + 1;
             $teacherWeekHours[$teacher['id']] = ($teacherWeekHours[$teacher['id']] ?? 0) + 1;
+            $classSubjectDayPeriods[$group['classId']][$group['subject']['id']][$day][] = (int) $lesson['slot']['period'];
 
             if (!in_array($group['subject']['id'], $teacher['subjectIds'] ?? [], true)) {
                 $errors[] = $teacher['name'] . ' is niet bevoegd voor ' . $group['subject']['code'];
@@ -72,6 +74,34 @@ final class RosterValidator
             if ($planned !== (int) $group['hoursPerWeek']) {
                 $errors[] = $group['subject']['code'] . ' heeft ' . $planned . ' van ' . (int) $group['hoursPerWeek'] . ' lessen gepland.';
             }
+
+            $periodsByDay = $classSubjectDayPeriods[$group['classId']][$group['subject']['id']] ?? [];
+
+            if (!empty($group['allowBlockHours'])) {
+                $requiredPairs = intdiv((int) $group['hoursPerWeek'], 2);
+                $plannedPairs = 0;
+
+                foreach ($periodsByDay as $periods) {
+                    $plannedPairs += $this->countBlockPairs($periods);
+                }
+
+                if ($requiredPairs > 0 && $plannedPairs < $requiredPairs) {
+                    $errors[] = $group['subject']['code'] . ' ' . $group['className'] . ' moet als blokuur worden ingepland.';
+                }
+
+                continue;
+            }
+
+            foreach ($periodsByDay as $day => $periods) {
+                $periods = array_values(array_unique(array_map('intval', $periods)));
+                sort($periods);
+
+                for ($index = 1; $index < count($periods); $index++) {
+                    if ($periods[$index] === $periods[$index - 1] + 1) {
+                        $errors[] = $group['subject']['code'] . ' ' . $group['className'] . ' heeft een blokuur op ' . $day . ', maar blokuur is niet toegestaan.';
+                    }
+                }
+            }
         }
 
         return [
@@ -87,5 +117,24 @@ final class RosterValidator
         }
 
         return is_array($availableSlots) && in_array($slotKey, $availableSlots, true);
+    }
+
+    private function countBlockPairs(array $periods): int
+    {
+        $periods = array_values(array_unique(array_map('intval', $periods)));
+        sort($periods);
+
+        $pairs = 0;
+
+        for ($index = 1; $index < count($periods); $index++) {
+            if ($periods[$index] !== $periods[$index - 1] + 1) {
+                continue;
+            }
+
+            $pairs++;
+            $index++;
+        }
+
+        return $pairs;
     }
 }

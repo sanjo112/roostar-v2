@@ -15,6 +15,7 @@ use Roostar\Modules\Auth\Repositories\UserRepository;
 use Roostar\Modules\Auth\Services\AuthService;
 use Roostar\Modules\Auth\Services\AuthSession;
 use Roostar\Modules\Auth\Services\LoginRateLimiter;
+use Roostar\Modules\Auth\Services\SchoolLoginVisualService;
 
 final class LoginController
 {
@@ -53,7 +54,10 @@ final class LoginController
                 $auth = new AuthService(new UserRepository($db));
                 $result = $auth->attempt($email, (string) $request->input('password', ''));
 
-                if ($result['success']) {
+                if (isset($result['two_factor'])) {
+                    $rateLimiter->clear($email, $ipAddress);
+                    $audit->record('auth.login.two_factor_required', (string) $result['user_id'], 'user', (string) $result['user_id'], [], $ipAddress);
+                } elseif ($result['success']) {
                     $rateLimiter->clear($email, $ipAddress);
                     $audit->record('auth.login.succeeded', (string) $result['user_id'], 'user', (string) $result['user_id'], [], $ipAddress);
                 } else {
@@ -67,13 +71,38 @@ final class LoginController
             $result = ['success' => false, 'error' => 'Inloggen is nog niet beschikbaar omdat de database niet is geconfigureerd.'];
         }
 
+        if (isset($result['two_factor'])) {
+            // preserve pending user id for flow
+            $_SESSION['pending_2fa_user'] = $result['user_id'] ?? null;
+            if ($result['two_factor'] === 'setup') {
+                return Response::redirect('/2fa/setup');
+            }
+
+            return Response::redirect('/2fa/challenge');
+        }
+
         if (!$result['success']) {
             $_SESSION['login_error'] = $result['error'];
             return Response::redirect('/login');
         }
 
         unset($_SESSION['login_error']);
+        $this->syncLoginVisualCookie((string) $result['user_id']);
 
         return Response::redirect('/');
+    }
+
+    private function syncLoginVisualCookie(string $userId): void
+    {
+        try {
+            $db = Connection::get();
+            $user = (new UserRepository($db))->findActiveById($userId);
+            $schoolId = is_array($user) ? ($user['school_id'] ?? null) : null;
+
+            (new SchoolLoginVisualService($db, $_ENV['APP_KEY'] ?? ''))
+                ->setCookieForSchool(is_string($schoolId) ? $schoolId : null);
+        } catch (\Throwable) {
+            // Login should never fail because a cosmetic preference cannot be loaded.
+        }
     }
 }

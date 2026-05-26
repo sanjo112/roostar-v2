@@ -122,6 +122,16 @@
         </div>
 
         <div class="form-group">
+          <label class="modal-picker-item">
+            <input type="checkbox" name="two_factor_required" value="1" checked>
+            <span>
+              <strong>2FA verplicht</strong>
+              <small>De gebruiker stelt bij de eerste login een authenticator-app in.</small>
+            </span>
+          </label>
+        </div>
+
+        <div class="form-group">
           <label class="form-label">Modules</label>
           <div class="modal-picker-list">
             <?php foreach (($moduleOptions ?? []) as $moduleKey => $module): ?>
@@ -199,6 +209,7 @@
           <th>Rol</th>
           <th>School</th>
           <th>Modules</th>
+          <th>2FA</th>
           <th>Status</th>
           <th>Laatste login</th>
           <th>Acties</th>
@@ -230,6 +241,15 @@
               </div>
             </td>
             <td>
+              <?php if ($userRow['two_factor_required']): ?>
+                <span class="status <?= $userRow['two_factor_configured'] ? 'st-done' : 'st-progress' ?>">
+                  <?= $userRow['two_factor_configured'] ? 'Actief' : 'Setup nodig' ?>
+                </span>
+              <?php else: ?>
+                <span class="badge">Niet verplicht</span>
+              <?php endif; ?>
+            </td>
+            <td>
               <span class="status <?= $userRow['active'] ? 'st-done' : 'st-block' ?>">
                 <?= $userRow['active'] ? 'Actief' : 'Inactief' ?>
               </span>
@@ -247,7 +267,7 @@
 
         <?php if (empty($users)): ?>
           <tr>
-            <td colspan="8" class="muted empty-cell">Geen gebruikers gevonden.</td>
+            <td colspan="9" class="muted empty-cell">Geen gebruikers gevonden.</td>
           </tr>
         <?php endif; ?>
       </tbody>
@@ -326,6 +346,20 @@
               <div class="muted text-sm">Je kunt je eigen rechten hier niet aanpassen.</div>
             <?php endif; ?>
           </div>
+
+          <div class="form-group">
+            <label class="modal-picker-item">
+              <input type="checkbox" name="two_factor_required" value="1" <?= $userRow['two_factor_required'] ? 'checked' : '' ?> <?= $isCurrentUser ? 'disabled' : '' ?>>
+              <span>
+                <strong>2FA verplicht</strong>
+                <small>
+                  <?= $userRow['two_factor_configured']
+                    ? 'Ingesteld. Gebruik reset als de gebruiker een nieuwe authenticator nodig heeft.'
+                    : 'Nog niet ingesteld. De gebruiker krijgt setup bij de volgende login.' ?>
+                </small>
+              </span>
+            </label>
+          </div>
         </div>
       </form>
 
@@ -335,6 +369,13 @@
           <input type="hidden" name="tab" value="<?= htmlspecialchars((string) $activeTab) ?>">
           <input type="hidden" name="user_id" value="<?= htmlspecialchars((string) $userRow['id']) ?>">
           <button class="btn btn-outline btn-sm" type="submit" <?= $userRow['active'] ? '' : 'disabled' ?>>Reset wachtwoord</button>
+        </form>
+
+        <form method="post" action="/gebruikers/reset-2fa" onsubmit="return confirm('Weet je zeker dat je 2FA voor deze gebruiker wilt resetten?');">
+          <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+          <input type="hidden" name="tab" value="<?= htmlspecialchars((string) $activeTab) ?>">
+          <input type="hidden" name="user_id" value="<?= htmlspecialchars((string) $userRow['id']) ?>">
+          <button class="btn btn-outline btn-sm" type="submit" <?= ($userRow['active'] && !$isCurrentUser) ? '' : 'disabled' ?>>Reset 2FA</button>
         </form>
 
         <?php if ($userRow['active']): ?>

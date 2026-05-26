@@ -18,7 +18,7 @@ final class LessonRequest
         public readonly int $durationPeriods = 1,
         public readonly array $allowedSlotIds = [],
         public readonly array $allowedRoomIds = [],
+        public readonly bool $allowBlockHours = false,
     ) {
     }
 }
-

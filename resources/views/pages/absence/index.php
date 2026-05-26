@@ -210,8 +210,9 @@ $selectedDateTo = $selectedAbsence && !empty($selectedAbsence['datum_tot'])
           <?php
             $isCancelled = (string) ($lesson['oplossing'] ?? '') === 'uitgeroosterd';
             $isCovered = !$isCancelled && !empty($lesson['vervanger_id']);
+            $lessonAnchor = 'impact-' . preg_replace('/[^a-zA-Z0-9_-]/', '-', (string) $lesson['id'] . '-' . (string) $lesson['datum']);
           ?>
-          <div class="impact-item <?= $isCancelled ? 'is-cancelled' : ($isCovered ? 'is-covered' : '') ?>">
+          <div id="<?= htmlspecialchars($lessonAnchor) ?>" class="impact-item <?= $isCancelled ? 'is-cancelled' : ($isCovered ? 'is-covered' : '') ?>">
             <div class="impact-item-head">
               <div>
                 <strong><?= htmlspecialchars((string) $lesson['vak']) ?></strong>
