@@ -1,10 +1,14 @@
 <?php
 $notificationCenter = $notificationCenter ?? ($notifications ?? []);
-$notificationUnreadCount = 0;
+$notificationWarningCount = 0;
 
 foreach ($notificationCenter as $notification) {
-    if (empty($notification['is_read']) && empty($notification['read_at'])) {
-        $notificationUnreadCount++;
+    if (
+        (string) ($notification['type'] ?? '') === 'warning'
+        && empty($notification['is_read'])
+        && empty($notification['read_at'])
+    ) {
+        $notificationWarningCount++;
     }
 }
 
@@ -48,26 +52,27 @@ $formatNotificationTime = static function (array $notification): string {
     <div class="notification-menu">
       <button class="icon-btn notification-bell" title="Meldingen" type="button" data-notification-toggle aria-expanded="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8M10 21a2 2 0 0 0 4 0"/></svg>
-        <?php if ($notificationUnreadCount > 0): ?>
-          <span class="notification-badge"><?= $notificationUnreadCount ?></span>
+        <?php if ($notificationWarningCount > 0): ?>
+          <span class="notification-badge"><?= $notificationWarningCount ?></span>
         <?php endif; ?>
       </button>
 
       <div class="notification-panel" data-notification-panel>
         <div class="notification-panel-head">
           <strong>Meldingen</strong>
-          <span data-notification-count><?= $notificationUnreadCount ?> nieuw</span>
+          <span data-notification-count><?= $notificationWarningCount ?> waarschuwingen</span>
         </div>
         <div class="notification-panel-list">
           <?php foreach ($notificationCenter as $notification): ?>
             <?php
               $isRead = !empty($notification['is_read']) || !empty($notification['read_at']);
               $notificationId = (string) ($notification['id'] ?? '');
+              $countsForBadge = !$isRead && (string) ($notification['type'] ?? '') === 'warning';
             ?>
-            <div class="notification-panel-item notification-<?= htmlspecialchars((string) ($notification['type'] ?? 'info')) ?><?= $isRead ? ' is-read' : '' ?>" data-notification-id="<?= htmlspecialchars($notificationId) ?>">
+            <div class="notification-panel-item notification-<?= htmlspecialchars((string) ($notification['type'] ?? 'info')) ?><?= $isRead ? ' is-read' : '' ?>" data-notification-id="<?= htmlspecialchars($notificationId) ?>" <?= $countsForBadge ? 'data-counts-badge="1"' : '' ?>>
               <div class="notification-panel-title-row">
                 <strong><?= htmlspecialchars((string) ($notification['title'] ?? 'Roostar')) ?></strong>
-                <?php if (!$isRead): ?>
+                <?php if ($countsForBadge): ?>
                   <span class="notification-unread-dot" aria-label="Ongelezen"></span>
                 <?php endif; ?>
               </div>

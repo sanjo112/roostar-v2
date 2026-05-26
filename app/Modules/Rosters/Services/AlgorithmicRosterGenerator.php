@@ -1,0 +1,526 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Roostar\Modules\Rosters\Services;
+
+final class AlgorithmicRosterGenerator
+{
+    public function generate(array $constraints): array
+    {
+        $slots = $this->slots();
+        $lessonGroups = array_values(array_filter(
+            $constraints['lessonGroups'] ?? [],
+            static fn (array $group): bool => (int) ($group['hoursPerWeek'] ?? 0) > 0,
+        ));
+
+        usort($lessonGroups, function (array $a, array $b) use ($constraints): int {
+            $aOptions = max(1, count($this->qualifiedTeachers($a, $constraints)) * count($this->suitableRooms($a, $constraints)));
+            $bOptions = max(1, count($this->qualifiedTeachers($b, $constraints)) * count($this->suitableRooms($b, $constraints)));
+
+            return $aOptions === $bOptions
+                ? (int) ($b['hoursPerWeek'] ?? 0) <=> (int) ($a['hoursPerWeek'] ?? 0)
+                : $aOptions <=> $bOptions;
+        });
+
+        $lessons = [];
+        $issues = [];
+        $teacherSlot = [];
+        $roomSlot = [];
+        $classSlot = [];
+        $groupDayHours = [];
+        $teacherDayHours = [];
+        $teacherWeekHours = [];
+        $teacherSubjectHours = [];
+        $teacherDaySchedule = [];
+
+        foreach ($lessonGroups as $group) {
+            for ($index = 0; $index < (int) $group['hoursPerWeek']; $index++) {
+                $placement = $this->bestPlacement(
+                    $group,
+                    $constraints,
+                    $slots,
+                    $teacherSlot,
+                    $roomSlot,
+                    $classSlot,
+                    $groupDayHours,
+                    $teacherDayHours,
+                    $teacherWeekHours,
+                    $teacherSubjectHours,
+                    $teacherDaySchedule,
+                );
+
+                if ($placement === null) {
+                    $issues[] = $this->unplacedIssue(
+                        $group,
+                        $constraints,
+                        $slots,
+                        $teacherSlot,
+                        $roomSlot,
+                        $classSlot,
+                        $teacherDayHours,
+                        $teacherWeekHours,
+                    );
+                    continue;
+                }
+
+                $lesson = [
+                    'lessonGroup' => $group,
+                    'teacher' => $placement['teacher'],
+                    'room' => $placement['room'],
+                    'slot' => $placement['slot'],
+                ];
+                $lessons[] = $lesson;
+
+                $slotKey = $this->slotKey($placement['slot']);
+                $day = $placement['slot']['day'];
+                $period = (int) $placement['slot']['period'];
+                $teacherSlot[$placement['teacher']['id'] . '_' . $slotKey] = true;
+                $roomSlot[$placement['room']['id'] . '_' . $slotKey] = true;
+                $classSlot[$group['classId'] . '_' . $slotKey] = true;
+                $groupDayHours[$group['id']][$day][] = $period;
+                $teacherDayHours[$placement['teacher']['id']][$day] = ($teacherDayHours[$placement['teacher']['id']][$day] ?? 0) + 1;
+                $teacherWeekHours[$placement['teacher']['id']] = ($teacherWeekHours[$placement['teacher']['id']] ?? 0) + 1;
+                $teacherSubjectHours[$placement['teacher']['id']][$group['subject']['id']] = ($teacherSubjectHours[$placement['teacher']['id']][$group['subject']['id']] ?? 0) + 1;
+                $teacherDaySchedule[$placement['teacher']['id']][$day][$period] = [
+                    'subjectId' => (string) $group['subject']['id'],
+                    'roomId' => (string) $placement['room']['id'],
+                    'locationKey' => $this->roomLocationKey($placement['room']),
+                ];
+            }
+        }
+
+        if (!empty($constraints['calendar']['breaks'])) {
+            $issues[] = count($constraints['calendar']['breaks']) . ' vrije dagen/vakanties worden per week toegepast in het weekrooster.';
+        }
+
+        if (!empty($constraints['calendar']['testWeeks'])) {
+            $issues[] = count($constraints['calendar']['testWeeks']) . ' toetsweek(en) beperken het weekrooster in de betreffende week.';
+        }
+
+        return [
+            'success' => true,
+            'lessons' => $lessons,
+            'issues' => array_values(array_unique($issues)),
+            'stats' => [
+                'lessonGroups' => count($lessonGroups),
+                'lessons' => count($lessons),
+                'unplaced' => count($issues),
+            ],
+        ];
+    }
+
+    private function bestPlacement(
+        array $group,
+        array $constraints,
+        array $slots,
+        array $teacherSlot,
+        array $roomSlot,
+        array $classSlot,
+        array $groupDayHours,
+        array $teacherDayHours,
+        array $teacherWeekHours,
+        array $teacherSubjectHours,
+        array $teacherDaySchedule,
+    ): ?array {
+        $best = null;
+        $bestScore = PHP_INT_MAX;
+
+        foreach ($slots as $slot) {
+            $slotKey = $this->slotKey($slot);
+
+            if (isset($classSlot[$group['classId'] . '_' . $slotKey])) {
+                continue;
+            }
+
+            foreach ($this->qualifiedTeachers($group, $constraints) as $teacher) {
+                if (isset($teacherSlot[$teacher['id'] . '_' . $slotKey])) {
+                    continue;
+                }
+                if (!$this->teacherAvailableForSlot($teacher, $slot)) {
+                    continue;
+                }
+                if (($teacherWeekHours[$teacher['id']] ?? 0) >= (int) ($teacher['maxHoursPerWeek'] ?? 24)) {
+                    continue;
+                }
+                if (($teacherDayHours[$teacher['id']][$slot['day']] ?? 0) >= (int) ($teacher['maxHoursPerDay'] ?? 6)) {
+                    continue;
+                }
+
+                foreach ($this->suitableRooms($group, $constraints) as $room) {
+                    if (isset($roomSlot[$room['id'] . '_' . $slotKey])) {
+                        continue;
+                    }
+                    if (!$this->roomAvailableForSlot($room, $slot)) {
+                        continue;
+                    }
+
+                    $score = $this->score($group, $room, $slot, $groupDayHours)
+                        + $this->teacherWorkloadPenalty($group, $teacher, $constraints, $teacherWeekHours, $teacherSubjectHours)
+                        + $this->teacherContinuityPenalty($group, $teacher, $room, $slot, $teacherDaySchedule);
+                    if ($score < $bestScore) {
+                        $bestScore = $score;
+                        $best = ['slot' => $slot, 'teacher' => $teacher, 'room' => $room];
+                    }
+                }
+            }
+        }
+
+        return $best;
+    }
+
+    private function unplacedIssue(
+        array $group,
+        array $constraints,
+        array $slots,
+        array $teacherSlot,
+        array $roomSlot,
+        array $classSlot,
+        array $teacherDayHours,
+        array $teacherWeekHours,
+    ): string {
+        $subjectCode = (string) $group['subject']['code'];
+        $className = (string) $group['className'];
+        $prefix = 'Niet geplaatst: ' . $subjectCode . ' voor ' . $className . '. ';
+        $teachers = $this->qualifiedTeachers($group, $constraints);
+        $rooms = $this->suitableRooms($group, $constraints);
+
+        if ($teachers === [] && $rooms === []) {
+            return $prefix . 'Geen bevoegde leraar en geen geschikt lokaal beschikbaar.';
+        }
+
+        if ($teachers === []) {
+            return $prefix . 'Geen bevoegde leraar beschikbaar.';
+        }
+
+        if ($rooms === []) {
+            return $prefix . $this->roomShortageReason($group, $constraints);
+        }
+
+        $blocked = [
+            'class' => 0,
+            'teacherBooked' => 0,
+            'teacherUnavailable' => 0,
+            'teacherWeekMax' => 0,
+            'teacherDayMax' => 0,
+            'roomBooked' => 0,
+            'roomUnavailable' => 0,
+        ];
+
+        foreach ($slots as $slot) {
+            $slotKey = $this->slotKey($slot);
+
+            if (isset($classSlot[$group['classId'] . '_' . $slotKey])) {
+                $blocked['class']++;
+                continue;
+            }
+
+            foreach ($teachers as $teacher) {
+                if (isset($teacherSlot[$teacher['id'] . '_' . $slotKey])) {
+                    $blocked['teacherBooked']++;
+                    continue;
+                }
+                if (!$this->teacherAvailableForSlot($teacher, $slot)) {
+                    $blocked['teacherUnavailable']++;
+                    continue;
+                }
+                if (($teacherWeekHours[$teacher['id']] ?? 0) >= (int) ($teacher['maxHoursPerWeek'] ?? 24)) {
+                    $blocked['teacherWeekMax']++;
+                    continue;
+                }
+                if (($teacherDayHours[$teacher['id']][$slot['day']] ?? 0) >= (int) ($teacher['maxHoursPerDay'] ?? 6)) {
+                    $blocked['teacherDayMax']++;
+                    continue;
+                }
+
+                foreach ($rooms as $room) {
+                    if (isset($roomSlot[$room['id'] . '_' . $slotKey])) {
+                        $blocked['roomBooked']++;
+                        continue;
+                    }
+                    if (!$this->roomAvailableForSlot($room, $slot)) {
+                        $blocked['roomUnavailable']++;
+                    }
+                }
+            }
+        }
+
+        arsort($blocked);
+        $reason = (string) array_key_first($blocked);
+
+        return $prefix . match ($reason) {
+            'class' => 'Klas heeft op de resterende mogelijke momenten al les.',
+            'teacherBooked' => 'Bevoegde leraar is op de mogelijke momenten al ingeroosterd.',
+            'teacherUnavailable' => 'Bevoegde leraar is niet beschikbaar op de mogelijke momenten.',
+            'teacherWeekMax' => 'Bevoegde leraar zit aan het maximum aantal uren per week.',
+            'teacherDayMax' => 'Bevoegde leraar zit aan het maximum aantal uren per dag.',
+            'roomBooked' => 'Geschikt lokaal is op de mogelijke momenten al bezet.',
+            'roomUnavailable' => 'Geschikt extern lokaal is niet inzetbaar op de mogelijke momenten.',
+            default => 'Geen passende combinatie van leraar, lokaal en uur gevonden.',
+        };
+    }
+
+    private function roomShortageReason(array $group, array $constraints): string
+    {
+        $subjectId = (string) $group['subject']['id'];
+        $studentCount = (int) ($group['studentCount'] ?? 0);
+        $subjectRooms = array_values(array_filter(
+            $constraints['rooms'] ?? [],
+            static fn (array $room): bool => in_array($subjectId, $room['subjectIds'] ?? [], true),
+        ));
+
+        if ($subjectRooms === []) {
+            return 'Geen lokaal gekoppeld aan dit vak.';
+        }
+
+        $largestCapacity = max(array_map(static fn (array $room): int => (int) ($room['capacity'] ?? 0), $subjectRooms));
+
+        return 'Lokaalcapaciteit te klein: nodig ' . $studentCount . ', grootste geschikte lokaal ' . $largestCapacity . '.';
+    }
+
+    private function teacherWorkloadPenalty(array $group, array $teacher, array $constraints, array $teacherWeekHours, array $teacherSubjectHours): int
+    {
+        $teacherId = (string) $teacher['id'];
+        $subjectId = (string) $group['subject']['id'];
+        $maxHours = max(1, (int) ($teacher['maxHoursPerWeek'] ?? 24));
+        $weekLoadPenalty = (int) round((($teacherWeekHours[$teacherId] ?? 0) / $maxHours) * 900);
+
+        $qualifiedTeachers = $this->qualifiedTeachers($group, $constraints);
+        $preferenceSum = array_sum(array_map(
+            static fn (array $candidate): int => max(1, (int) ($candidate['subjectPreferences'][$subjectId] ?? 100)),
+            $qualifiedTeachers,
+        ));
+        $preference = max(1, (int) ($teacher['subjectPreferences'][$subjectId] ?? 100));
+        $targetShare = $preferenceSum > 0 ? $preference / $preferenceSum : 1 / max(1, count($qualifiedTeachers));
+
+        $currentSubjectHours = 0;
+        foreach ($qualifiedTeachers as $candidate) {
+            $currentSubjectHours += (int) ($teacherSubjectHours[(string) $candidate['id']][$subjectId] ?? 0);
+        }
+
+        $projectedTeacherHours = (int) ($teacherSubjectHours[$teacherId][$subjectId] ?? 0) + 1;
+        $projectedShare = $projectedTeacherHours / max(1, $currentSubjectHours + 1);
+        $subjectMixPenalty = (int) round(abs($projectedShare - $targetShare) * 1400);
+
+        return $weekLoadPenalty + $subjectMixPenalty;
+    }
+
+    private function teacherContinuityPenalty(array $group, array $teacher, array $room, array $slot, array $teacherDaySchedule): int
+    {
+        $teacherId = (string) $teacher['id'];
+        $day = (string) $slot['day'];
+        $period = (int) $slot['period'];
+        $daySchedule = $teacherDaySchedule[$teacherId][$day] ?? [];
+
+        if ($daySchedule === []) {
+            return 0;
+        }
+
+        $subjectId = (string) $group['subject']['id'];
+        $roomId = (string) $room['id'];
+        $locationKey = $this->roomLocationKey($room);
+        $penalty = 0;
+        $sameSubjectOnDay = 0;
+        $sameLocationOnDay = 0;
+
+        foreach ($daySchedule as $scheduledLesson) {
+            if ((string) ($scheduledLesson['subjectId'] ?? '') === $subjectId) {
+                $sameSubjectOnDay++;
+            }
+
+            if ((string) ($scheduledLesson['locationKey'] ?? '') === $locationKey) {
+                $sameLocationOnDay++;
+            }
+        }
+
+        foreach ([-1, 1] as $offset) {
+            $neighbor = $daySchedule[$period + $offset] ?? null;
+
+            if (!is_array($neighbor)) {
+                continue;
+            }
+
+            $sameSubject = (string) ($neighbor['subjectId'] ?? '') === $subjectId;
+            $sameRoom = (string) ($neighbor['roomId'] ?? '') === $roomId;
+            $sameLocation = (string) ($neighbor['locationKey'] ?? '') === $locationKey;
+
+            if ($sameSubject && $sameRoom) {
+                $penalty -= 700;
+                continue;
+            }
+
+            if ($sameSubject && $sameLocation) {
+                $penalty -= 560;
+                continue;
+            }
+
+            if ($sameSubject) {
+                $penalty -= 320;
+                continue;
+            }
+
+            $penalty += $sameLocation ? 360 : 900;
+        }
+
+        if ($sameSubjectOnDay > 0) {
+            $nearestSameSubjectDistance = $this->nearestLessonDistance($daySchedule, $period, 'subjectId', $subjectId);
+            $penalty += min(900, max(0, $nearestSameSubjectDistance - 1) * 180);
+            $penalty -= min(600, $sameSubjectOnDay * 180);
+        }
+
+        if ($sameLocationOnDay > 0) {
+            $penalty -= min(240, $sameLocationOnDay * 80);
+        }
+
+        $previous = $daySchedule[$period - 1] ?? null;
+        $next = $daySchedule[$period + 1] ?? null;
+        if (is_array($previous) && is_array($next)) {
+            $previousSubject = (string) ($previous['subjectId'] ?? '');
+            $nextSubject = (string) ($next['subjectId'] ?? '');
+
+            if ($previousSubject !== $subjectId && $nextSubject !== $subjectId) {
+                $penalty += $previousSubject === $nextSubject ? 1200 : 760;
+            }
+        }
+
+        return $penalty;
+    }
+
+    private function nearestLessonDistance(array $daySchedule, int $period, string $field, string $value): int
+    {
+        $nearest = 99;
+
+        foreach ($daySchedule as $scheduledPeriod => $scheduledLesson) {
+            if ((string) ($scheduledLesson[$field] ?? '') !== $value) {
+                continue;
+            }
+
+            $nearest = min($nearest, abs((int) $scheduledPeriod - $period));
+        }
+
+        return $nearest;
+    }
+
+    private function roomLocationKey(array $room): string
+    {
+        return (string) ($room['locationId'] ?? $room['location_id'] ?? $room['locatie_id'] ?? $room['id']);
+    }
+
+    private function qualifiedTeachers(array $group, array $constraints): array
+    {
+        $subjectId = (string) $group['subject']['id'];
+        $teachers = array_values(array_filter(
+            $constraints['teachers'] ?? [],
+            static fn (array $teacher): bool => in_array($subjectId, $teacher['subjectIds'] ?? [], true),
+        ));
+
+        usort($teachers, static fn (array $a, array $b): int => strcmp((string) $a['name'], (string) $b['name']));
+
+        return $teachers;
+    }
+
+    private function suitableRooms(array $group, array $constraints): array
+    {
+        $subjectId = (string) $group['subject']['id'];
+        $studentCount = (int) ($group['studentCount'] ?? 0);
+        $rooms = array_values(array_filter($constraints['rooms'] ?? [], static function (array $room) use ($subjectId, $studentCount): bool {
+            return in_array($subjectId, $room['subjectIds'] ?? [], true)
+                && (int) ($room['capacity'] ?? 0) >= $studentCount;
+        }));
+
+        usort($rooms, static function (array $a, array $b) use ($studentCount): int {
+            $aOver = (int) $a['capacity'] - $studentCount;
+            $bOver = (int) $b['capacity'] - $studentCount;
+
+            return $aOver === $bOver
+                ? strcmp((string) $a['name'], (string) $b['name'])
+                : $aOver <=> $bOver;
+        });
+
+        return $rooms;
+    }
+
+    private function teacherAvailableForSlot(array $teacher, array $slot): bool
+    {
+        $availableSlots = $teacher['availableSlots'] ?? null;
+
+        if ($availableSlots === null) {
+            return true;
+        }
+
+        if (!is_array($availableSlots)) {
+            return false;
+        }
+
+        return in_array($this->slotKey($slot), $availableSlots, true);
+    }
+
+    private function roomAvailableForSlot(array $room, array $slot): bool
+    {
+        if (empty($room['externalLocation'])) {
+            return true;
+        }
+
+        $availableSlots = $room['availableSlots'] ?? null;
+
+        if (!is_array($availableSlots)) {
+            return false;
+        }
+
+        return in_array($this->slotKey($slot), $availableSlots, true);
+    }
+
+    private function score(array $group, array $room, array $slot, array $groupDayHours): int
+    {
+        $score = ((int) $slot['period']) * 8;
+        $dayHours = array_values(array_unique(array_map('intval', $groupDayHours[$group['id']][$slot['day']] ?? [])));
+        sort($dayHours);
+
+        if (count($dayHours) >= 2) {
+            return PHP_INT_MAX;
+        }
+
+        if (count($dayHours) === 1) {
+            $score += abs($dayHours[0] - (int) $slot['period']) === 1 ? 20 : 180;
+        }
+
+        $score += max(0, (int) $room['capacity'] - (int) ($group['studentCount'] ?? 0));
+
+        return $score;
+    }
+
+    private function slots(): array
+    {
+        $times = [
+            1 => ['08:30', '09:20'],
+            2 => ['09:20', '10:10'],
+            3 => ['10:25', '11:15'],
+            4 => ['11:15', '12:05'],
+            5 => ['12:45', '13:35'],
+            6 => ['13:35', '14:25'],
+            7 => ['14:25', '15:15'],
+            8 => ['15:15', '16:05'],
+            9 => ['16:05', '16:55'],
+        ];
+        $slots = [];
+
+        foreach (['ma' => 'Maandag', 'di' => 'Dinsdag', 'wo' => 'Woensdag', 'do' => 'Donderdag', 'vr' => 'Vrijdag'] as $key => $label) {
+            foreach ($times as $period => $range) {
+                $slots[] = [
+                    'dayKey' => $key,
+                    'day' => $label,
+                    'period' => $period,
+                    'start' => $range[0],
+                    'end' => $range[1],
+                ];
+            }
+        }
+
+        return $slots;
+    }
+
+    private function slotKey(array $slot): string
+    {
+        return (string) $slot['dayKey'] . '-' . (string) $slot['period'];
+    }
+}

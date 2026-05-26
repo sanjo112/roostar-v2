@@ -9,14 +9,14 @@ final class RoleDefaults
     public static function pageAccess(string $role): array
     {
         return match ($role) {
-            'roostar_admin' => ['dashboard', 'roostar-admin', 'profiel'],
-            'sg_admin' => ['dashboard', 'rooster', 'stamdata', 'leerlingen', 'ziekte', 'toetsweken', 'stage', 'gebruikers', 'auditlog', 'settings', 'registratie', 'profiel'],
-            'school_admin' => ['dashboard', 'rooster', 'stamdata', 'leerlingen', 'ziekte', 'toetsweken', 'stage', 'gebruikers', 'auditlog', 'settings', 'registratie', 'profiel'],
-            'afdelingsleider' => ['dashboard', 'afdeling', 'leraren', 'settings', 'profiel'],
-            'rooster_medewerker' => ['dashboard', 'rooster', 'rooster-genereren', 'ziekte', 'toetsweken', 'profiel'],
-            'leraar' => ['dashboard', 'rooster', 'profiel'],
-            'leerling' => ['dashboard', 'rooster', 'profiel'],
-            default => ['dashboard'],
+            'roostar_admin' => ['roostar-admin', 'profiel'],
+            'sg_admin' => ['rooster', 'stamdata', 'leerlingen', 'ziekte', 'toetsweken', 'stage', 'gebruikers', 'auditlog', 'settings', 'registratie', 'profiel'],
+            'school_admin' => ['rooster', 'stamdata', 'leerlingen', 'ziekte', 'toetsweken', 'stage', 'gebruikers', 'auditlog', 'settings', 'registratie', 'profiel'],
+            'afdelingsleider' => ['afdeling', 'leraren', 'settings', 'profiel'],
+            'rooster_medewerker' => ['rooster', 'rooster-genereren', 'ziekte', 'toetsweken', 'profiel'],
+            'leraar' => ['rooster', 'profiel'],
+            'leerling' => ['rooster', 'profiel'],
+            default => ['profiel'],
         };
     }
 

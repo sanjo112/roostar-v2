@@ -18,13 +18,16 @@ final class SchoolRepository
 
     public function accessibleFor(UserContext $user): array
     {
+        $activeSql = $this->hasArchiveColumns() ? ' AND active = 1' : '';
+
         if ($user->role === 'roostar_admin') {
-            $stmt = $this->db->query("SELECT * FROM scholen ORDER BY created_at");
+            $where = $activeSql !== '' ? 'WHERE active = 1' : '';
+            $stmt = $this->db->query("SELECT * FROM scholen {$where} ORDER BY created_at");
             return $this->decryptRows($stmt->fetchAll());
         }
 
         if ($user->schoolId) {
-            $stmt = $this->db->prepare("SELECT * FROM scholen WHERE id = :id ORDER BY created_at");
+            $stmt = $this->db->prepare("SELECT * FROM scholen WHERE id = :id{$activeSql} ORDER BY created_at");
             $stmt->execute(['id' => $user->schoolId]);
             return $this->decryptRows($stmt->fetchAll());
         }
@@ -34,6 +37,7 @@ final class SchoolRepository
                 SELECT *
                 FROM scholen
                 WHERE scholengroep_id = :scholengroep_id
+                    {$activeSql}
                 ORDER BY created_at
             ");
             $stmt->execute(['scholengroep_id' => $user->scholengroepId]);
@@ -41,6 +45,24 @@ final class SchoolRepository
         }
 
         return [];
+    }
+
+    private function hasArchiveColumns(): bool
+    {
+        static $exists = null;
+
+        if ($exists !== null) {
+            return $exists;
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM scholen LIKE 'active'");
+            $exists = (bool) $stmt->fetch();
+        } catch (\Throwable) {
+            $exists = false;
+        }
+
+        return $exists;
     }
 
     private function decryptRows(array $rows): array
@@ -62,4 +84,3 @@ final class SchoolRepository
         }
     }
 }
-

@@ -1,0 +1,51 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run PHP built-in server",
+      "type": "shell",
+      "command": "/usr/local/bin/php",
+      "args": ["-S", "localhost:8000", "-t", "public"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Roostar: db-create",
+      "type": "shell",
+      "command": "/usr/local/bin/php bin/db-create.php",
+      "group": "none",
+      "problemMatcher": []
+    },
+    {
+      "label": "Roostar: migrate",
+      "type": "shell",
+      "command": "/usr/local/bin/php bin/migrate.php",
+      "group": "none",
+      "problemMatcher": []
+    },
+    {
+      "label": "Roostar: migrate-status",
+      "type": "shell",
+      "command": "/usr/local/bin/php bin/migrate-status.php",
+      "group": "none",
+      "problemMatcher": []
+    },
+    {
+      "label": "Roostar: key-generate",
+      "type": "shell",
+      "command": "/usr/local/bin/php bin/key-generate.php",
+      "group": "none",
+      "problemMatcher": []
+    },
+    {
+      "label": "Roostar: dev-seed",
+      "type": "shell",
+      "command": "/usr/local/bin/php bin/dev-seed.php",
+      "group": "none",
+      "problemMatcher": []
+    }
+  ]
+}

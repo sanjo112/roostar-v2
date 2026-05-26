@@ -14,7 +14,6 @@ final class NavigationBuilder
 
         $groups = [
             'Hoofdmenu' => [
-                new NavigationItem('dashboard', 'Dashboard', '/', 'calendar'),
                 new NavigationItem('roostar-admin', 'Roostar Admin', '/roostar-admin', 'platform', 'HQ'),
                 new NavigationItem('rooster', 'Rooster', '/rooster', 'roster', 'v12'),
                 new NavigationItem('rooster-genereren', 'Rooster genereren', '/roosters/genereren', 'bolt', 'AI'),
@@ -23,7 +22,7 @@ final class NavigationBuilder
                 new NavigationItem('stage', 'Stage', '/stage', 'briefcase'),
             ],
             'Beheer' => [
-                new NavigationItem('stamdata', 'Stamdata', '/stamdata', 'database', 'Setup'),
+                new NavigationItem('stamdata', 'Stamdata', '/stamdata', 'database'),
                 new NavigationItem('leerlingen', 'Leerlingen', '/leerlingen', 'student'),
                 new NavigationItem('gebruikers', 'Gebruikers', '/gebruikers', 'users'),
                 new NavigationItem('auditlog', 'Auditlog', '/auditlog', 'audit'),

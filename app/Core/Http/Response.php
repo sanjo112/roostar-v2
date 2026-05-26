@@ -34,6 +34,14 @@ final class Response
         return new self('', $status, ['Location' => $to]);
     }
 
+    public static function csv(string $body, string $filename): self
+    {
+        return new self($body, 200, [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => 'attachment; filename="' . str_replace('"', '', $filename) . '"',
+        ]);
+    }
+
     public function send(): void
     {
         http_response_code($this->status);

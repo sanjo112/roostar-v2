@@ -85,7 +85,7 @@ final class NotificationBag
     {
         $userId = self::currentUserId();
 
-        if ($userId) {
+        if ($userId && $type === 'warning') {
             try {
                 (new NotificationRepository(Connection::get()))->create($userId, $type, $title, $message);
                 return;
