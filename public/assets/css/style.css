@@ -1293,9 +1293,15 @@ body.has-modal-open {
   border-radius: 16px;
   box-shadow: 0 24px 60px -12px rgba(0,0,0,0.25);
   width: 100%; max-width: 480px;
-  max-height: 90vh;
+  max-height: min(90vh, calc(100dvh - 32px));
   display: flex; flex-direction: column;
   overflow: hidden;
+}
+.modal > form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 .modal-head {
   padding: 16px 20px;
@@ -1309,7 +1315,15 @@ body.has-modal-open {
   color: var(--muted); padding: 4px;
   display: grid; place-items: center;
 }
-.modal-body { padding: 18px 20px; overflow-y: auto; overflow-x: hidden; flex: 1; }
+.modal-body {
+  padding: 18px 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
 .modal-foot {
   padding: 14px 20px;
   border-top: 1px solid var(--line);
