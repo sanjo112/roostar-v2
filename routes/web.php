@@ -6,6 +6,7 @@ use Roostar\Core\Http\Response;
 use Roostar\Core\Http\Middleware\AuthRequired;
 use Roostar\Core\Http\Router;
 use Roostar\Core\Access\PermissionRegistry;
+use Roostar\Core\View\AppView;
 use Roostar\Modules\Absence\Controllers\AbsenceController;
 use Roostar\Core\Notifications\NotificationController;
 use Roostar\Modules\Audit\Controllers\AuditLogController;
@@ -141,6 +142,10 @@ return static function (Router $router): void {
     $router->post('/roostar-admin/klanten/archiveer', [$platformAdmin, 'archiveCustomer'], $authRequired);
     $router->post('/roostar-admin/klanten/heractiveer', [$platformAdmin, 'restoreCustomer'], $authRequired);
     $router->post('/roostar-admin/school-admins', [$platformAdmin, 'storeSchoolAdmin'], $authRequired);
+    $router->get('/roundbuttons', static fn (): Response => Response::html(AppView::render('style-lab/roundbuttons', [
+        'activePage' => 'settings',
+        'pageTitle' => 'Round buttons',
+    ])), $authRequired);
 
     foreach ([
         '/stage' => 'stage',
