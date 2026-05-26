@@ -1,9 +1,23 @@
+<?php
+$assetVersion = static function (string $path): string {
+    $fullPath = dirname(__DIR__, 4) . '/public' . $path;
+
+    return is_file($fullPath) ? $path . '?v=' . filemtime($fullPath) : $path;
+};
+?>
 <!doctype html>
 <html lang="nl">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Inloggen - Roostar V2</title>
+  <link rel="icon" href="<?= htmlspecialchars($assetVersion('/assets/ico/favicon.ico')) ?>" sizes="any">
+  <link rel="shortcut icon" href="<?= htmlspecialchars($assetVersion('/assets/ico/favicon.ico')) ?>">
+  <link rel="icon" type="image/png" sizes="32x32" href="<?= htmlspecialchars($assetVersion('/assets/ico/favicon-32x32.png')) ?>">
+  <link rel="icon" type="image/png" sizes="16x16" href="<?= htmlspecialchars($assetVersion('/assets/ico/favicon-16x16.png')) ?>">
+  <link rel="apple-touch-icon" sizes="180x180" href="<?= htmlspecialchars($assetVersion('/assets/ico/apple-touch-icon.png')) ?>">
+  <link rel="manifest" href="<?= htmlspecialchars($assetVersion('/assets/ico/site.webmanifest')) ?>">
+  <meta name="theme-color" content="#2563eb">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -47,13 +61,11 @@
       z-index: 1;
       display: inline-flex;
       align-items: center;
-      min-height: 62px;
-      padding: 12px 18px;
-      border-radius: 14px;
-      background: rgba(255, 255, 255, 0.92);
-      border: 1px solid rgba(255, 255, 255, 0.56);
-      box-shadow: 0 18px 50px rgba(15, 23, 42, 0.14);
-      backdrop-filter: blur(10px);
+      min-height: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
     }
 
     .login-brand img {
@@ -291,8 +303,7 @@
       }
 
       .login-brand {
-        min-height: 52px;
-        padding: 10px 14px;
+        min-height: 0;
       }
 
       .login-brand img {
@@ -327,7 +338,7 @@
   <main class="login-shell">
     <section class="login-visual" aria-label="Roostar planning">
       <a class="login-brand" href="/login" aria-label="Roostar">
-        <img src="/assets/images/Roostar_logo.png" alt="Roostar">
+        <img src="/assets/images/logo-transparant.png" alt="Roostar">
       </a>
 
       <div class="login-visual-copy">
