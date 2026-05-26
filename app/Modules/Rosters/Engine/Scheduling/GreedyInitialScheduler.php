@@ -213,7 +213,8 @@ final class GreedyInitialScheduler implements InitialScheduler
             return false;
         }
 
-        $periods = $this->classSubjectDayPeriods[$lessonRequest->classGroupId][$lessonRequest->subjectId][$slot->dayIndex] ?? [];
+        $subjectPeriodsByDay = $this->classSubjectDayPeriods[$lessonRequest->classGroupId][$lessonRequest->subjectId] ?? [];
+        $periods = $subjectPeriodsByDay[$slot->dayIndex] ?? [];
 
         if (!$lessonRequest->allowBlockHours) {
             foreach ($periods as $period) {
@@ -225,10 +226,18 @@ final class GreedyInitialScheduler implements InitialScheduler
             return true;
         }
 
-        if (count($periods) % 2 === 1) {
-            foreach ($periods as $period) {
-                if (abs((int) $period - $slot->period) === 1) {
-                    return true;
+        $totalSubjectLessons = array_sum(array_map('count', $subjectPeriodsByDay));
+
+        if ($totalSubjectLessons % 2 === 1) {
+            foreach ($subjectPeriodsByDay as $dayIndex => $dayPeriods) {
+                if ((int) $dayIndex !== $slot->dayIndex) {
+                    continue;
+                }
+
+                foreach ($dayPeriods as $period) {
+                    if (abs((int) $period - $slot->period) === 1) {
+                        return true;
+                    }
                 }
             }
 
@@ -256,6 +265,7 @@ final class GreedyInitialScheduler implements InitialScheduler
 
         $score += $this->classCompactnessScore($classDayPeriods, $slot->period);
         $score += $this->classDayBalanceScore($request->classGroupId, $slot);
+        $score += $this->classMorningStartScore($classDayPeriods, $slot);
         $score += $this->teacherMoveScore($assignment, $room, $slot);
 
         $teacher = $input->teacher($request->teacherId);
@@ -266,6 +276,34 @@ final class GreedyInitialScheduler implements InitialScheduler
         $score -= $slot->period;
 
         return $score;
+    }
+
+    private function classMorningStartScore(array $periods, TimeSlot $slot): int
+    {
+        if ($periods === []) {
+            $score = match (true) {
+                $slot->period <= 2 => 260,
+                $slot->period === 3 => 170,
+                $slot->period === 4 => -80,
+                $slot->period === 5 => -240,
+                default => -420,
+            };
+
+            return $slot->dayIndex === 5 ? $score - 90 : $score;
+        }
+
+        $periods = array_values(array_unique(array_map('intval', $periods)));
+        $firstPeriod = min($periods);
+
+        if ($slot->period < $firstPeriod) {
+            return min(360, ($firstPeriod - $slot->period) * 120);
+        }
+
+        if ($firstPeriod > 3 && $slot->period > $firstPeriod) {
+            return -90;
+        }
+
+        return 0;
     }
 
     private function classDayBalanceScore(string $classGroupId, TimeSlot $slot): int

@@ -15,6 +15,7 @@ use Roostar\Modules\Rosters\Engine\Rules\Hard\BlockHoursAllowedRule;
 use Roostar\Modules\Rosters\Engine\Rules\Hard\ClassGroupNotDoubleBookedRule;
 use Roostar\Modules\Rosters\Engine\Rules\Hard\RoomNotDoubleBookedRule;
 use Roostar\Modules\Rosters\Engine\Rules\Hard\TeacherNotDoubleBookedRule;
+use Roostar\Modules\Rosters\Engine\Rules\Soft\ClassMorningStartRule;
 use Roostar\Modules\Rosters\Engine\Rules\Soft\StudentGapRule;
 use Roostar\Modules\Rosters\Engine\Rules\Soft\SubjectSpreadRule;
 use Roostar\Modules\Rosters\Engine\Rules\Soft\TeacherMoveRule;
@@ -35,6 +36,7 @@ final class SchedulingEngineFactory
             new AvailabilityRule(),
             new BlockHoursAllowedRule(),
             new StudentGapRule(),
+            new ClassMorningStartRule(),
             new TeacherMoveRule(),
             new SubjectSpreadRule(),
             new TeacherRoomPreferenceRule(),
