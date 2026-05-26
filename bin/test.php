@@ -6,6 +6,7 @@ require __DIR__ . '/../bootstrap/autoload.php';
 
 $tests = [
     __DIR__ . '/../tests/Unit/RosterPolicyTest.php',
+    __DIR__ . '/../tests/Unit/RosterEngineTest.php',
     __DIR__ . '/../tests/Unit/RoleDefaultsTest.php',
     __DIR__ . '/../tests/Unit/NavigationBuilderTest.php',
     __DIR__ . '/../tests/Unit/UserContextTest.php',

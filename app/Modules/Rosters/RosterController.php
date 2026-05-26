@@ -6,6 +6,8 @@ namespace Roostar\Modules\Rosters;
 
 use Roostar\Core\Http\Response;
 use Roostar\Core\View\AppView;
+use Roostar\Modules\Rosters\Engine\DemoSchedulingInputFactory;
+use Roostar\Modules\Rosters\Engine\SchedulingEngineFactory;
 
 final class RosterController
 {
@@ -21,11 +23,14 @@ final class RosterController
 
     public function generate(): Response
     {
-        return Response::html(AppView::render('module-placeholder', [
+        $input = DemoSchedulingInputFactory::create();
+        $result = SchedulingEngineFactory::default()->run($input);
+
+        return Response::html(AppView::render('rosters/generate', [
             'activePage' => 'rooster-genereren',
             'pageTitle' => 'Rooster genereren',
-            'moduleTitle' => 'Rooster genereren',
-            'moduleDescription' => 'Genereren blijft expliciet permission-based: roster.generate op school-scope.',
+            'result' => $result,
+            'input' => $input,
         ]));
     }
 }
