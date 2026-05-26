@@ -8,6 +8,7 @@
   ];
   $createDefaultRole = $activeTab === 'leraren' ? 'leraar' : ($activeTab === 'leerlingen' ? 'leerling' : '');
   $createButtonLabel = $activeTab === 'leraren' ? 'Nieuwe leraar' : ($activeTab === 'leerlingen' ? 'Nieuwe leerling' : 'Nieuwe gebruiker');
+  $permissionLabels = $permissionLabels ?? [];
 ?>
 
 <section class="card overview-card">
@@ -68,7 +69,7 @@
     <div class="modal-head">
       <div>
         <div id="user-create-title" class="modal-title">Nieuwe gebruiker</div>
-        <div class="muted text-sm">Maak een gebruiker aan met expliciete school-scope en rolrechten.</div>
+        <div class="muted text-sm">Maak een gebruiker aan en kies expliciet tot welke modules die toegang heeft.</div>
       </div>
       <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -101,15 +102,40 @@
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">School</label>
+            <label class="form-label">Voorkeursschool</label>
             <select class="form-select" name="school_id" required>
               <?php if ($singleSchoolId === ''): ?>
-                <option value="">Kies een school</option>
+                <option value="">Kies een voorkeursschool</option>
               <?php endif; ?>
               <?php foreach ($schools as $school): ?>
                 <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= $singleSchoolId === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
               <?php endforeach; ?>
             </select>
+            <div class="muted text-sm">
+              <?php if ($singleSchoolId !== ''): ?>
+                De enige school is automatisch gekozen. Rooster genereren geldt dan direct voor deze school.
+              <?php else: ?>
+                Bij meerdere scholen bepaalt dit voor welke school modules zoals rooster genereren gelden.
+              <?php endif; ?>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Modules</label>
+          <div class="modal-picker-list">
+            <?php foreach (($moduleOptions ?? []) as $moduleKey => $module): ?>
+              <label class="modal-picker-item">
+                <input type="checkbox" name="modules[]" value="<?= htmlspecialchars((string) $moduleKey) ?>">
+                <span>
+                  <strong><?= htmlspecialchars((string) $module['label']) ?></strong>
+                  <small><?= htmlspecialchars((string) $module['description']) ?></small>
+                </span>
+              </label>
+            <?php endforeach; ?>
+            <?php if (empty($moduleOptions)): ?>
+              <span class="muted text-sm">Je hebt geen modules die je mag toekennen.</span>
+            <?php endif; ?>
           </div>
         </div>
       </div>
@@ -172,7 +198,7 @@
           <th>E-mail</th>
           <th>Rol</th>
           <th>School</th>
-          <th>Rooster genereren</th>
+          <th>Modules</th>
           <th>Status</th>
           <th>Laatste login</th>
           <th>Acties</th>
@@ -192,9 +218,16 @@
             <td><span class="badge <?= $userRow['role'] === 'rooster_medewerker' ? 'blue' : 'green' ?>"><?= htmlspecialchars((string) $userRow['role_label']) ?></span></td>
             <td class="muted"><?= htmlspecialchars((string) ($userRow['school_naam'] ?: '-')) ?></td>
             <td>
-              <span class="badge <?= $userRow['can_generate_roster'] ? 'green' : '' ?>">
-                <?= $userRow['can_generate_roster'] ? 'Toegang' : 'Geen' ?>
-              </span>
+              <div class="badge-list">
+                <?php foreach (($userRow['permissions'] ?? []) as $permission): ?>
+                  <span class="badge <?= $permission === 'roster.generate' ? 'green' : 'blue' ?>">
+                    <?= htmlspecialchars((string) ($permissionLabels[$permission] ?? $permission)) ?>
+                  </span>
+                <?php endforeach; ?>
+                <?php if (empty($userRow['permissions'])): ?>
+                  <span class="badge">Geen</span>
+                <?php endif; ?>
+              </div>
             </td>
             <td>
               <span class="status <?= $userRow['active'] ? 'st-done' : 'st-block' ?>">
@@ -205,25 +238,9 @@
               <?= $userRow['last_login_at'] ? htmlspecialchars(date('d-m-Y H:i', strtotime((string) $userRow['last_login_at']))) : 'Nog niet' ?>
             </td>
             <td>
-              <div class="user-row-actions">
-                <button class="btn btn-outline btn-sm" type="button" data-open-modal="password-reset-<?= htmlspecialchars((string) $userRow['id']) ?>" <?= $userRow['active'] ? '' : 'disabled' ?>>Reset wachtwoord</button>
-
-                <?php if ($userRow['active']): ?>
-                  <form method="post" action="/gebruikers/deactiveer" onsubmit="return confirm('Weet je zeker dat je deze gebruiker wilt deactiveren?');">
-                    <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
-                    <input type="hidden" name="tab" value="<?= htmlspecialchars((string) $activeTab) ?>">
-                    <input type="hidden" name="user_id" value="<?= htmlspecialchars((string) $userRow['id']) ?>">
-                    <button class="btn btn-danger btn-sm" type="submit" <?= !$isCurrentUser ? '' : 'disabled' ?>>Weghalen</button>
-                  </form>
-                <?php else: ?>
-                  <form method="post" action="/gebruikers/heractiveer">
-                    <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
-                    <input type="hidden" name="tab" value="<?= htmlspecialchars((string) $activeTab) ?>">
-                    <input type="hidden" name="user_id" value="<?= htmlspecialchars((string) $userRow['id']) ?>">
-                    <button class="btn btn-outline btn-sm" type="submit">Heractiveren</button>
-                  </form>
-                <?php endif; ?>
-              </div>
+              <button class="btn btn-outline btn-sm" type="button" data-open-modal="user-edit-<?= htmlspecialchars((string) $userRow['id']) ?>">
+                Bewerken
+              </button>
             </td>
           </tr>
         <?php endforeach; ?>
@@ -239,35 +256,108 @@
 </section>
 
 <?php foreach (($users ?? []) as $userRow): ?>
-  <div id="password-reset-<?= htmlspecialchars((string) $userRow['id']) ?>" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="password-reset-title-<?= htmlspecialchars((string) $userRow['id']) ?>" hidden>
-    <div class="modal modal-md app-modal">
+  <?php
+    $editModalId = 'user-edit-' . (string) $userRow['id'];
+    $editFormId = 'user-edit-form-' . (string) $userRow['id'];
+    $userPermissions = $userRow['permissions'] ?? [];
+    $isCurrentUser = (string) ($currentUserId ?? '') === (string) $userRow['id'];
+  ?>
+  <div id="<?= htmlspecialchars($editModalId) ?>" class="modal-backdrop glass-backdrop" role="dialog" aria-modal="true" aria-labelledby="<?= htmlspecialchars($editModalId) ?>-title" hidden>
+    <div class="modal modal-lg app-modal">
       <div class="modal-head">
         <div>
-          <div id="password-reset-title-<?= htmlspecialchars((string) $userRow['id']) ?>" class="modal-title">Wachtwoord resetten</div>
-          <div class="muted text-sm">Maak een tijdelijk wachtwoord voor deze gebruiker.</div>
+          <div id="<?= htmlspecialchars($editModalId) ?>-title" class="modal-title">Gebruiker bewerken</div>
+          <div class="muted text-sm">Wijzig profiel, voorkeursschool en moduletoegang voor <?= htmlspecialchars((string) $userRow['naam']) ?>.</div>
         </div>
         <button class="modal-close" type="button" aria-label="Sluiten" data-close-modal>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </div>
-      <form method="post" action="/gebruikers/reset-wachtwoord">
+      <form id="<?= htmlspecialchars($editFormId) ?>" method="post" action="/gebruikers/bewerk">
         <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
         <input type="hidden" name="tab" value="<?= htmlspecialchars((string) $activeTab) ?>">
         <input type="hidden" name="user_id" value="<?= htmlspecialchars((string) $userRow['id']) ?>">
         <div class="modal-body">
-          <p class="muted password-modal-copy">
-            Je maakt een tijdelijk wachtwoord voor <strong><?= htmlspecialchars((string) $userRow['naam']) ?></strong>. Bij de eerstvolgende login moet deze gebruiker direct een nieuw wachtwoord kiezen.
-          </p>
-          <div class="temporary-password-box">
-            <span>Gebruiker</span>
-            <strong><?= htmlspecialchars((string) $userRow['email']) ?></strong>
+          <div class="app-modal-grid">
+            <div class="form-group">
+              <label class="form-label">Naam</label>
+              <input class="form-input" type="text" name="name" value="<?= htmlspecialchars((string) $userRow['naam']) ?>" required <?= $isCurrentUser ? 'disabled' : '' ?>>
+            </div>
+            <div class="form-group">
+              <label class="form-label">E-mailadres</label>
+              <input class="form-input" type="email" name="email" value="<?= htmlspecialchars((string) $userRow['email']) ?>" required <?= $isCurrentUser ? 'disabled' : '' ?>>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Rol</label>
+              <select class="form-select" name="role" required <?= $isCurrentUser ? 'disabled' : '' ?>>
+                <?php foreach (($roleOptions ?? []) as $roleValue => $roleLabel): ?>
+                  <option value="<?= htmlspecialchars((string) $roleValue) ?>" <?= (string) $userRow['role'] === (string) $roleValue ? 'selected' : '' ?>><?= htmlspecialchars((string) $roleLabel) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Voorkeursschool</label>
+              <select class="form-select" name="school_id" required <?= $isCurrentUser ? 'disabled' : '' ?>>
+                <?php foreach ($schools as $school): ?>
+                  <option value="<?= htmlspecialchars((string) $school['id']) ?>" <?= (string) $userRow['school_id'] === (string) $school['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $school['naam']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Modules</label>
+            <div class="modal-picker-list">
+              <?php foreach (($moduleOptions ?? []) as $moduleKey => $module): ?>
+                <?php
+                  $modulePermissions = array_map('strval', $module['permissions'] ?? []);
+                  $checked = $modulePermissions !== [] && count(array_intersect($modulePermissions, $userPermissions)) === count($modulePermissions);
+                ?>
+                <label class="modal-picker-item">
+                  <input type="checkbox" name="modules[]" value="<?= htmlspecialchars((string) $moduleKey) ?>" <?= $checked ? 'checked' : '' ?> <?= $isCurrentUser ? 'disabled' : '' ?>>
+                  <span>
+                    <strong><?= htmlspecialchars((string) $module['label']) ?></strong>
+                    <small><?= htmlspecialchars((string) $module['description']) ?></small>
+                  </span>
+                </label>
+              <?php endforeach; ?>
+            </div>
+            <?php if ($isCurrentUser): ?>
+              <div class="muted text-sm">Je kunt je eigen rechten hier niet aanpassen.</div>
+            <?php endif; ?>
           </div>
         </div>
-        <div class="modal-foot">
-          <button class="btn btn-outline" type="button" data-close-modal>Annuleren</button>
-          <button class="btn btn-dark" type="submit" <?= $userRow['active'] ? '' : 'disabled' ?>>Tijdelijk wachtwoord maken</button>
-        </div>
       </form>
+
+      <div class="modal-danger-actions">
+        <form method="post" action="/gebruikers/reset-wachtwoord">
+          <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+          <input type="hidden" name="tab" value="<?= htmlspecialchars((string) $activeTab) ?>">
+          <input type="hidden" name="user_id" value="<?= htmlspecialchars((string) $userRow['id']) ?>">
+          <button class="btn btn-outline btn-sm" type="submit" <?= $userRow['active'] ? '' : 'disabled' ?>>Reset wachtwoord</button>
+        </form>
+
+        <?php if ($userRow['active']): ?>
+          <form method="post" action="/gebruikers/deactiveer" onsubmit="return confirm('Weet je zeker dat je deze gebruiker wilt deactiveren?');">
+            <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+            <input type="hidden" name="tab" value="<?= htmlspecialchars((string) $activeTab) ?>">
+            <input type="hidden" name="user_id" value="<?= htmlspecialchars((string) $userRow['id']) ?>">
+            <button class="btn btn-danger btn-sm" type="submit" <?= !$isCurrentUser ? '' : 'disabled' ?>>Weghalen</button>
+          </form>
+        <?php else: ?>
+          <form method="post" action="/gebruikers/heractiveer">
+            <input type="hidden" name="_token" value="<?= htmlspecialchars((string) $csrfToken) ?>">
+            <input type="hidden" name="tab" value="<?= htmlspecialchars((string) $activeTab) ?>">
+            <input type="hidden" name="user_id" value="<?= htmlspecialchars((string) $userRow['id']) ?>">
+            <button class="btn btn-outline btn-sm" type="submit">Heractiveren</button>
+          </form>
+        <?php endif; ?>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-outline" type="button" data-close-modal>Annuleren</button>
+        <button class="btn btn-dark" type="submit" form="<?= htmlspecialchars($editFormId) ?>" <?= $isCurrentUser ? 'disabled' : '' ?>>Wijzigingen opslaan</button>
+      </div>
     </div>
   </div>
 <?php endforeach; ?>

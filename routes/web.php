@@ -117,6 +117,7 @@ return static function (Router $router): void {
     $router->get('/gebruikers', [$users, 'index'], $authRequired);
     $router->get('/gebruikers/nieuw', [$users, 'create'], $authRequired);
     $router->post('/gebruikers', [$users, 'store'], $authRequired);
+    $router->post('/gebruikers/bewerk', [$users, 'update'], $authRequired);
     $router->post('/gebruikers/deactiveer', [$users, 'deactivate'], $authRequired);
     $router->post('/gebruikers/heractiveer', [$users, 'reactivate'], $authRequired);
     $router->post('/gebruikers/reset-wachtwoord', [$users, 'resetPassword'], $authRequired);

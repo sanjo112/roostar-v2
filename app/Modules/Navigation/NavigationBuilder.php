@@ -4,13 +4,26 @@ declare(strict_types=1);
 
 namespace Roostar\Modules\Navigation;
 
+use Roostar\Core\Auth\UserContext;
 use Roostar\Core\Access\RoleDefaults;
+use Roostar\Core\Access\PermissionRegistry;
 
 final class NavigationBuilder
 {
     public static function forRole(string $role, string $activePage): array
     {
         $allowed = RoleDefaults::pageAccess($role);
+
+        return self::build($allowed, $activePage);
+    }
+
+    public static function forUser(UserContext $user, string $activePage): array
+    {
+        return self::build(self::pageAccessForPermissions($user), $activePage);
+    }
+
+    private static function build(array $allowed, string $activePage): array
+    {
 
         $groups = [
             'Hoofdmenu' => [
@@ -47,5 +60,33 @@ final class NavigationBuilder
             )),
             $groups,
         );
+    }
+
+    private static function pageAccessForPermissions(UserContext $user): array
+    {
+        $allowed = ['profiel'];
+
+        foreach ($user->permissions as $grant) {
+            $permission = (string) ($grant['permission'] ?? '');
+
+            $allowed = [
+                ...$allowed,
+                ...match ($permission) {
+                    PermissionRegistry::PLATFORM_MANAGE => ['roostar-admin'],
+                    PermissionRegistry::SCHOOL_MANAGE => ['stamdata', 'leerlingen', 'settings'],
+                    PermissionRegistry::USERS_MANAGE => ['gebruikers'],
+                    PermissionRegistry::AUDIT_VIEW => ['auditlog'],
+                    PermissionRegistry::ROSTER_VIEW => ['rooster'],
+                    PermissionRegistry::ROSTER_GENERATE => ['rooster', 'rooster-genereren'],
+                    PermissionRegistry::ROSTER_EDIT => ['rooster'],
+                    PermissionRegistry::ABSENCE_MANAGE => ['ziekte'],
+                    PermissionRegistry::TEST_PLANNING_MANAGE => ['toetsweken'],
+                    PermissionRegistry::INTERNSHIP_MANAGE => ['stage'],
+                    default => [],
+                },
+            ];
+        }
+
+        return array_values(array_unique($allowed));
     }
 }

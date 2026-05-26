@@ -27,5 +27,32 @@ final class PermissionGrantRepository
             'scope_id' => $scopeId,
         ]);
     }
-}
 
+    public function replaceForUser(string $userId, array $grants): void
+    {
+        $this->db->beginTransaction();
+
+        try {
+            $stmt = $this->db->prepare("DELETE FROM permission_grants WHERE user_id = :user_id");
+            $stmt->execute(['user_id' => $userId]);
+
+            foreach ($grants as $grant) {
+                if (!is_array($grant)) {
+                    continue;
+                }
+
+                $this->grant(
+                    $userId,
+                    (string) ($grant['permission'] ?? ''),
+                    (string) ($grant['scope_type'] ?? ''),
+                    (string) ($grant['scope_id'] ?? ''),
+                );
+            }
+
+            $this->db->commit();
+        } catch (\Throwable $exception) {
+            $this->db->rollBack();
+            throw $exception;
+        }
+    }
+}

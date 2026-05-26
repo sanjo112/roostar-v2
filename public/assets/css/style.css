@@ -1096,6 +1096,13 @@ table.data-table td strong { font-weight: 500; color: var(--ink); }
 .badge.navy  { background: var(--navy-soft);  color: var(--navy); }
 .badge.red   { background: var(--coral-soft); color: var(--coral); }
 
+.badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 420px;
+}
+
 .queue-progress {
   width: 96px;
   height: 6px;
@@ -1337,6 +1344,14 @@ body.has-modal-open {
 }
 .app-modal .modal-foot {
   padding: 18px 26px;
+}
+.modal-danger-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 26px;
+  border-top: 1px solid var(--line);
+  background: #fbfdff;
 }
 .app-modal-grid {
   display: grid;

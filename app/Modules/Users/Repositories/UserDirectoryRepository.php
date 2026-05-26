@@ -7,6 +7,7 @@ namespace Roostar\Modules\Users\Repositories;
 use PDO;
 use Roostar\Core\Auth\UserContext;
 use Roostar\Core\Security\Encryptor;
+use Roostar\Core\Support\Str;
 
 final class UserDirectoryRepository
 {
@@ -141,6 +142,50 @@ final class UserDirectoryRepository
             WHERE id = :id
         ");
         $stmt->execute(['id' => $targetUserId]);
+    }
+
+    public function emailExistsForOtherUser(string $email, string $targetUserId): bool
+    {
+        $stmt = $this->db->prepare("
+            SELECT id
+            FROM users
+            WHERE email = :email
+              AND id <> :target_user_id
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'email' => mb_strtolower(trim($email)),
+            'target_user_id' => $targetUserId,
+        ]);
+
+        return is_string($stmt->fetchColumn());
+    }
+
+    public function updateProfile(string $targetUserId, array $data): void
+    {
+        $name = trim((string) ($data['name'] ?? ''));
+        $email = mb_strtolower(trim((string) ($data['email'] ?? '')));
+
+        $stmt = $this->db->prepare("
+            UPDATE users
+            SET email = :email,
+                naam_encrypted = :naam_encrypted,
+                naam_search_hash = :naam_search_hash,
+                role = :role,
+                scholengroep_id = :scholengroep_id,
+                school_id = :school_id,
+                updated_at = NOW()
+            WHERE id = :id
+        ");
+        $stmt->execute([
+            'id' => $targetUserId,
+            'email' => $email,
+            'naam_encrypted' => $this->encryptor->encrypt($name),
+            'naam_search_hash' => Str::searchHash($name),
+            'role' => (string) ($data['role'] ?? ''),
+            'scholengroep_id' => $data['scholengroep_id'] ?? null,
+            'school_id' => $data['school_id'] ?? null,
+        ]);
     }
 
     private function scopeFor(UserContext $user): array

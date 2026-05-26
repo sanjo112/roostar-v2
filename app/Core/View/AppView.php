@@ -30,7 +30,7 @@ final class AppView
             ...$data,
             'activePage' => $activePage,
             'content' => $content,
-            'navGroups' => NavigationBuilder::forRole($role, $activePage),
+            'navGroups' => $context ? NavigationBuilder::forUser($context, $activePage) : NavigationBuilder::forRole($role, $activePage),
             'notifications' => $notifications,
             'notificationCenter' => NotificationBag::recent() ?: $notifications,
             'pageTitle' => $pageTitle,
