@@ -12,13 +12,24 @@ use Roostar\Modules\Rosters\Engine\Scoring\ScheduleScorer;
 
 abstract class LocalSearchOptimizer implements Optimizer
 {
+    public function __construct(
+        private readonly int $maxEvaluations = 240,
+    ) {
+    }
+
     public function optimize(Schedule $schedule, SchedulingInput $input, ScheduleScorer $scorer): Schedule
     {
         $bestSchedule = $schedule;
         $bestScore = $scorer->score($schedule, $input);
+        $evaluations = 0;
 
         foreach ($schedule->assignments() as $assignment) {
             foreach ($this->candidatesFor($assignment, $input) as $candidate) {
+                if ($evaluations >= $this->maxEvaluations) {
+                    return $bestSchedule;
+                }
+
+                $evaluations++;
                 $candidateSchedule = $schedule->replaceAssignment($assignment->lessonRequestId, $candidate);
                 $candidateScore = $scorer->score($candidateSchedule, $input);
 
@@ -37,4 +48,3 @@ abstract class LocalSearchOptimizer implements Optimizer
      */
     abstract protected function candidatesFor(LessonAssignment $assignment, SchedulingInput $input): array;
 }
-

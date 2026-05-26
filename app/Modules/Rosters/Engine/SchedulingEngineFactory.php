@@ -45,10 +45,10 @@ final class SchedulingEngineFactory
             new ScheduleScorer($validator),
             new ScheduleExplainer(),
             [
-                new ReduceMovesOptimizer(),
-                new ReduceGapsOptimizer(),
-                new ImproveSpreadOptimizer(),
-                new ImprovePreferencesOptimizer(),
+                new ReduceMovesOptimizer(80),
+                new ReduceGapsOptimizer(120),
+                new ImproveSpreadOptimizer(120),
+                new ImprovePreferencesOptimizer(80),
             ],
         );
     }

@@ -13,40 +13,84 @@ use Roostar\Modules\Rosters\Engine\Model\TimeSlot;
 
 final class GreedyInitialScheduler implements InitialScheduler
 {
+    private array $teacherSlots = [];
+    private array $classSlots = [];
+    private array $roomSlots = [];
+    private array $classSubjectDayPeriods = [];
+    private array $teacherDayRooms = [];
+    private array $classDayPeriods = [];
+
     public function createInitialSchedule(SchedulingInput $input): Schedule
     {
         $schedule = new Schedule();
+        $this->resetState();
 
-        foreach ($this->orderedLessonRequests($input->lessonRequests) as $lessonRequest) {
+        foreach ($this->orderedLessonRequests($input->lessonRequests, $input) as $lessonRequest) {
             $assignment = $this->firstAvailableAssignment($lessonRequest, $input, $schedule);
 
             if ($assignment) {
                 $schedule = $schedule->withAssignment($assignment);
+                $this->indexAssignment($assignment, $input);
             }
         }
 
         return $schedule;
     }
 
+    private function resetState(): void
+    {
+        $this->teacherSlots = [];
+        $this->classSlots = [];
+        $this->roomSlots = [];
+        $this->classSubjectDayPeriods = [];
+        $this->teacherDayRooms = [];
+        $this->classDayPeriods = [];
+    }
+
     /**
      * @param LessonRequest[] $lessonRequests
      * @return LessonRequest[]
      */
-    private function orderedLessonRequests(array $lessonRequests): array
+    private function orderedLessonRequests(array $lessonRequests, SchedulingInput $input): array
     {
-        usort($lessonRequests, static function (LessonRequest $a, LessonRequest $b): int {
+        usort($lessonRequests, function (LessonRequest $a, LessonRequest $b) use ($input): int {
             if ($a->allowBlockHours !== $b->allowBlockHours) {
                 return $a->allowBlockHours ? -1 : 1;
             }
 
-            return [$a->classGroupId, $a->subjectId, $a->id] <=> [$b->classGroupId, $b->subjectId, $b->id];
+            $aDifficulty = $this->requestDifficulty($a, $input);
+            $bDifficulty = $this->requestDifficulty($b, $input);
+
+            return $aDifficulty === $bDifficulty
+                ? [$a->classGroupId, $a->subjectId, $a->id] <=> [$b->classGroupId, $b->subjectId, $b->id]
+                : $bDifficulty <=> $aDifficulty;
         });
 
         return $lessonRequests;
     }
 
+    private function requestDifficulty(LessonRequest $lessonRequest, SchedulingInput $input): int
+    {
+        $teacher = $input->teacher($lessonRequest->teacherId);
+        $slotCount = $lessonRequest->allowedSlotIds === []
+            ? count($input->timeSlots)
+            : count($lessonRequest->allowedSlotIds);
+        $roomCount = $lessonRequest->allowedRoomIds === []
+            ? count($input->rooms)
+            : count($lessonRequest->allowedRoomIds);
+
+        if ($teacher && $teacher->availableSlotIds !== []) {
+            $slotCount = min($slotCount, count($teacher->availableSlotIds));
+        }
+
+        return (int) (100000 / max(1, $slotCount * max(1, $roomCount)));
+    }
+
     private function firstAvailableAssignment(LessonRequest $lessonRequest, SchedulingInput $input, Schedule $schedule): ?LessonAssignment
     {
+        $bestAssignment = null;
+        $bestScore = PHP_INT_MIN;
+
         foreach ($this->orderedSlotsForRequest($lessonRequest, $input, $schedule) as $slot) {
             if (!$this->slotAllowed($lessonRequest, $input, $slot)) {
                 continue;
@@ -57,11 +101,11 @@ final class GreedyInitialScheduler implements InitialScheduler
                     continue;
                 }
 
-                if (!$this->slotHasFreeCoreResources($schedule, $lessonRequest, $room, $slot, $input)) {
+                if (!$this->slotHasFreeCoreResources($lessonRequest, $room, $slot, $input)) {
                     continue;
                 }
 
-                return new LessonAssignment(
+                $candidate = new LessonAssignment(
                     $lessonRequest->id,
                     $lessonRequest->classGroupId,
                     $lessonRequest->teacherId,
@@ -69,10 +113,16 @@ final class GreedyInitialScheduler implements InitialScheduler
                     $room->id,
                     $slot->id,
                 );
+                $score = $this->candidateScore($candidate, $lessonRequest, $room, $slot, $input);
+
+                if ($score > $bestScore) {
+                    $bestAssignment = $candidate;
+                    $bestScore = $score;
+                }
             }
         }
 
-        return null;
+        return $bestAssignment;
     }
 
     /**
@@ -115,7 +165,7 @@ final class GreedyInitialScheduler implements InitialScheduler
 
         usort($adjacent, static fn (TimeSlot $a, TimeSlot $b): int => abs($a->period - $anchorSlot->period) <=> abs($b->period - $anchorSlot->period));
 
-        return [...$adjacent, ...$remaining];
+        return $adjacent === [] ? $input->timeSlots : [...$adjacent, ...$remaining];
     }
 
     private function slotAllowed(LessonRequest $lessonRequest, SchedulingInput $input, TimeSlot $slot): bool
@@ -147,31 +197,152 @@ final class GreedyInitialScheduler implements InitialScheduler
         return $room->availableSlotIds === [] || in_array($slot->id, $room->availableSlotIds, true);
     }
 
-    private function slotHasFreeCoreResources(Schedule $schedule, LessonRequest $lessonRequest, Room $room, TimeSlot $slot, SchedulingInput $input): bool
+    private function slotHasFreeCoreResources(LessonRequest $lessonRequest, Room $room, TimeSlot $slot, SchedulingInput $input): bool
     {
-        foreach ($schedule->assignments() as $assignment) {
-            if ($assignment->slotId !== $slot->id) {
-                if ($lessonRequest->allowBlockHours || $assignment->classGroupId !== $lessonRequest->classGroupId || $assignment->subjectId !== $lessonRequest->subjectId) {
-                    continue;
-                }
+        if (
+            isset($this->teacherSlots[$lessonRequest->teacherId][$slot->id])
+            || isset($this->classSlots[$lessonRequest->classGroupId][$slot->id])
+            || isset($this->roomSlots[$room->id][$slot->id])
+        ) {
+            return false;
+        }
 
-                $assignedSlot = $input->slot($assignment->slotId);
-                if ($assignedSlot && $assignedSlot->dayIndex === $slot->dayIndex && abs($assignedSlot->period - $slot->period) === 1) {
+        $periods = $this->classSubjectDayPeriods[$lessonRequest->classGroupId][$lessonRequest->subjectId][$slot->dayIndex] ?? [];
+
+        if (!$lessonRequest->allowBlockHours) {
+            foreach ($periods as $period) {
+                if (abs((int) $period - $slot->period) === 1) {
                     return false;
                 }
+            }
 
+            return true;
+        }
+
+        if (count($periods) % 2 === 1) {
+            foreach ($periods as $period) {
+                if (abs((int) $period - $slot->period) === 1) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private function candidateScore(LessonAssignment $assignment, LessonRequest $request, Room $room, TimeSlot $slot, SchedulingInput $input): int
+    {
+        $score = 1000;
+        $sameSubjectPeriods = $this->classSubjectDayPeriods[$request->classGroupId][$request->subjectId][$slot->dayIndex] ?? [];
+        $classDayPeriods = $this->classDayPeriods[$request->classGroupId][$slot->dayIndex] ?? [];
+
+        if ($request->allowBlockHours) {
+            $score += count($sameSubjectPeriods) % 2 === 1 ? 350 : 80;
+
+            if (count($sameSubjectPeriods) % 2 === 0 && !$this->hasPossibleBlockNeighbour($request, $room, $slot, $input)) {
+                $score -= 240;
+            }
+        } elseif ($sameSubjectPeriods !== []) {
+            $score -= 140 * count($sameSubjectPeriods);
+        }
+
+        $score += $this->classCompactnessScore($classDayPeriods, $slot->period);
+        $score += $this->teacherMoveScore($assignment, $room, $slot);
+
+        $teacher = $input->teacher($request->teacherId);
+        if ($teacher && isset($teacher->preferredRoomIds[$room->id])) {
+            $score += 60 + (int) $teacher->preferredRoomIds[$room->id];
+        }
+
+        $score -= $slot->period;
+
+        return $score;
+    }
+
+    private function hasPossibleBlockNeighbour(LessonRequest $request, Room $room, TimeSlot $slot, SchedulingInput $input): bool
+    {
+        foreach ($input->timeSlots as $candidate) {
+            if ($candidate->dayIndex !== $slot->dayIndex || abs($candidate->period - $slot->period) !== 1) {
+                continue;
+            }
+
+            if (!$this->slotAllowed($request, $input, $candidate)) {
                 continue;
             }
 
             if (
-                $assignment->teacherId === $lessonRequest->teacherId
-                || $assignment->classGroupId === $lessonRequest->classGroupId
-                || $assignment->roomId === $room->id
+                isset($this->teacherSlots[$request->teacherId][$candidate->id])
+                || isset($this->classSlots[$request->classGroupId][$candidate->id])
+                || isset($this->roomSlots[$room->id][$candidate->id])
             ) {
-                return false;
+                continue;
             }
+
+            return true;
         }
 
-        return true;
+        return false;
+    }
+
+    private function classCompactnessScore(array $periods, int $period): int
+    {
+        if ($periods === []) {
+            return 0;
+        }
+
+        $periods = array_values(array_unique(array_map('intval', $periods)));
+        sort($periods);
+
+        $score = 0;
+        $min = min($periods);
+        $max = max($periods);
+
+        if (in_array($period - 1, $periods, true) || in_array($period + 1, $periods, true)) {
+            $score += 70;
+        }
+
+        if ($period > $min && $period < $max && !in_array($period, $periods, true)) {
+            $score += 45;
+        }
+
+        if ($period < $min - 1 || $period > $max + 1) {
+            $score -= 35;
+        }
+
+        return $score;
+    }
+
+    private function teacherMoveScore(LessonAssignment $assignment, Room $room, TimeSlot $slot): int
+    {
+        $score = 0;
+        $roomsByPeriod = $this->teacherDayRooms[$assignment->teacherId][$slot->dayIndex] ?? [];
+
+        foreach ([$slot->period - 1, $slot->period + 1] as $period) {
+            if (!isset($roomsByPeriod[$period])) {
+                continue;
+            }
+
+            $score += $roomsByPeriod[$period] === $room->id ? 35 : -25;
+        }
+
+        return $score;
+    }
+
+    private function indexAssignment(LessonAssignment $assignment, SchedulingInput $input): void
+    {
+        $slot = $input->slot($assignment->slotId);
+
+        if (!$slot) {
+            return;
+        }
+
+        $this->teacherSlots[$assignment->teacherId][$slot->id] = true;
+        $this->classSlots[$assignment->classGroupId][$slot->id] = true;
+        $this->roomSlots[$assignment->roomId][$slot->id] = true;
+        $this->classSubjectDayPeriods[$assignment->classGroupId][$assignment->subjectId][$slot->dayIndex][] = $slot->period;
+        $this->teacherDayRooms[$assignment->teacherId][$slot->dayIndex][$slot->period] = $assignment->roomId;
+        $this->classDayPeriods[$assignment->classGroupId][$slot->dayIndex][] = $slot->period;
     }
 }
