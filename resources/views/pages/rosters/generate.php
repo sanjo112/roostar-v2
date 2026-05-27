@@ -56,10 +56,66 @@
           </div>
 
           <div class="generation-actions">
-            <button class="btn btn-dark generation-button" type="submit">Rooster genereren</button>
+            <button class="btn btn-dark generation-button" type="submit">Zet in queue</button>
           </div>
         </form>
       </section>
+
+      <?php $queueJobs = $queueJobs ?? []; ?>
+      <?php if ($queueJobs !== []): ?>
+        <section class="card tasks-card">
+          <div class="tasks-head">
+            <div>
+              <div class="eyebrow">Queue</div>
+              <h2>Generatiestatus</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Voortgang</th>
+                  <th>Gelukt</th>
+                  <th>Lessen</th>
+                  <th>Gestart</th>
+                  <th>Klaar</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php foreach ($queueJobs as $job): ?>
+                  <?php
+                    $status = (string) ($job['status'] ?? 'queued');
+                    $statusLabel = [
+                      'queued' => 'In wachtrij',
+                      'running' => 'Bezig',
+                      'completed' => 'Klaar',
+                      'failed' => 'Mislukt',
+                    ][$status] ?? $status;
+                    $statusClass = [
+                      'queued' => 'st-muted',
+                      'running' => 'st-warn',
+                      'completed' => 'st-done',
+                      'failed' => 'st-block',
+                    ][$status] ?? 'st-muted';
+                  ?>
+                  <tr>
+                    <td><span class="status <?= htmlspecialchars($statusClass) ?>"><?= htmlspecialchars($statusLabel) ?></span></td>
+                    <td><?= (int) ($job['progress_percent'] ?? 0) ?>%</td>
+                    <td><?= ($job['result_percent'] ?? null) === null ? '-' : (int) $job['result_percent'] . '%' ?></td>
+                    <td class="muted"><?= (int) ($job['lesson_count'] ?? 0) ?> / <?= (int) ($job['lesson_request_count'] ?? 0) ?></td>
+                    <td class="muted"><?= !empty($job['started_at']) ? htmlspecialchars(date('d-m H:i', strtotime((string) $job['started_at']))) : '-' ?></td>
+                    <td class="muted"><?= !empty($job['finished_at']) ? htmlspecialchars(date('d-m H:i', strtotime((string) $job['finished_at']))) : '-' ?></td>
+                  </tr>
+                  <?php if (!empty($job['error_message'])): ?>
+                    <tr><td colspan="6" class="muted"><?= htmlspecialchars((string) $job['error_message']) ?></td></tr>
+                  <?php endif; ?>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      <?php endif; ?>
 
       <?php $overviewViews = $generated['views'] ?? []; ?>
       <?php if (empty($overviewViews['class'] ?? [])): ?>

@@ -154,6 +154,8 @@ return static function (Router $router): void {
     $router->post('/roostar-admin/klanten/archiveer', [$platformAdmin, 'archiveCustomer'], $authRequired);
     $router->post('/roostar-admin/klanten/heractiveer', [$platformAdmin, 'restoreCustomer'], $authRequired);
     $router->post('/roostar-admin/school-admins', [$platformAdmin, 'storeSchoolAdmin'], $authRequired);
+    $router->post('/roostar-admin/queue/instellingen', [$platformAdmin, 'updateQueueSettings'], $authRequired);
+    $router->post('/roostar-admin/queue/verwerk', [$platformAdmin, 'processQueue'], $authRequired);
 
     foreach ([
         '/stage' => 'stage',

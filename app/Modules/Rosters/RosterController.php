@@ -17,10 +17,9 @@ use Roostar\Modules\Auth\Services\AuthSession;
 use Roostar\Modules\RosterData\Repositories\RosterDataRepository;
 use Roostar\Modules\Rosters\Engine\DemoSchedulingInputFactory;
 use Roostar\Modules\Rosters\Engine\SchedulingEngineFactory;
+use Roostar\Modules\Rosters\Repositories\RosterGenerationQueueRepository;
 use Roostar\Modules\Rosters\Repositories\RosterGenerationRepository;
 use Roostar\Modules\Rosters\Repositories\RosterWeekRepository;
-use Roostar\Modules\Rosters\Services\EngineRosterGenerator;
-use Roostar\Modules\Rosters\Services\RosterValidator;
 
 final class RosterController
 {
@@ -85,6 +84,7 @@ final class RosterController
         $encryptor = new Encryptor($_ENV['ENCRYPTION_KEY'] ?? '');
         $rosterData = new RosterDataRepository($db, $encryptor);
         $generationRepository = new RosterGenerationRepository($db, $encryptor);
+        $queueRepository = new RosterGenerationQueueRepository($db, $encryptor);
 
         $schoolYears = $rosterData->schoolYearsFor($user);
         $periods = $rosterData->periodsFor($user);
@@ -138,23 +138,20 @@ final class RosterController
             } else {
                 try {
                     $constraints = $generationRepository->constraintsForPeriod($user, $selectedPeriodId);
-                    $result = (new EngineRosterGenerator())->generate($constraints);
-                    $validation = (new RosterValidator())->validate($constraints, $result);
+                    $job = $queueRepository->enqueue(
+                        (string) ($constraints['schoolId'] ?? ''),
+                        (string) ($constraints['schoolYear']['id'] ?? $selectedSchoolYearId),
+                        $selectedPeriodId,
+                        $user->id,
+                    );
 
-                    if (!$validation['success']) {
-                        $result['issues'] = array_values(array_unique(array_merge($result['issues'] ?? [], $validation['errors'])));
+                    if (($job['status'] ?? '') === 'queued') {
+                        NotificationBag::success('Roostergeneratie is aan de queue toegevoegd.');
+                    } else {
+                        NotificationBag::warning('Er staat al een roostergeneratie klaar of actief voor deze periode.');
                     }
 
-                    $db->beginTransaction();
-                    $rosterIds = $generationRepository->saveGeneratedRosters($constraints, $result, $user->id);
-                    $db->commit();
-
-                    $saved = $generationRepository->latestSavedRosterForPeriod($user, $selectedPeriodId);
-                    $generated = $saved !== null
-                        ? $this->presentGeneratedRoster($saved['constraints'], $saved['result'], $saved['validation'], $saved['rosterIds'])
-                        : $this->presentGeneratedRoster($constraints, $result, $validation, $rosterIds);
-                    $generated['stored'] = true;
-                    NotificationBag::success('Roostervoorstellen zijn gegenereerd en als concept opgeslagen.');
+                    return Response::redirect('/roosters/genereren?schooljaar_id=' . rawurlencode($selectedSchoolYearId) . '&periode_id=' . rawurlencode($selectedPeriodId));
                 } catch (\Throwable $e) {
                     if ($db->inTransaction()) {
                         $db->rollBack();
@@ -182,6 +179,9 @@ final class RosterController
             'selectedSchoolYearId' => $selectedSchoolYearId,
             'selectedPeriodId' => $selectedPeriodId,
             'generated' => $generated,
+            'queueJobs' => $selectedPeriodId !== '' && !empty($classesForSchoolYear[0]['school_id'] ?? null)
+                ? $queueRepository->recentForPeriod((string) $classesForSchoolYear[0]['school_id'], $selectedPeriodId)
+                : [],
             'readiness' => $this->readiness($classesForSchoolYear, $subjects, $rooms, $teachers, $periodsForSchoolYear),
             'engineInput' => $engineInput,
             'engineResult' => SchedulingEngineFactory::default()->run($engineInput),

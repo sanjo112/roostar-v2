@@ -1048,6 +1048,15 @@ table.data-table td strong { font-weight: 500; color: var(--ink); }
 .st-muted { background: #EEF2F7; color: var(--ink-2); }
 .st-muted::before { background: #94A3B8; }
 
+.inline-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.compact-input {
+  width: 88px;
+}
+
 .inline-pill-list {
   display: flex;
   align-items: center;
@@ -4829,6 +4838,37 @@ table.data-table tbody tr.row-selected {
 .readiness-list {
   display: grid;
   gap: 8px;
+}
+.readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.readiness-card {
+  padding: 12px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff7f7;
+}
+.readiness-card.ok {
+  border-color: var(--line);
+  background: #fff;
+}
+.readiness-card strong,
+.readiness-card span {
+  display: block;
+}
+.readiness-card strong {
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1;
+}
+.readiness-card span {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
 }
 .readiness-item {
   display: flex;

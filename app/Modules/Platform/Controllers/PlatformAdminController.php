@@ -15,6 +15,8 @@ use Roostar\Core\Security\Encryptor;
 use Roostar\Core\View\AppView;
 use Roostar\Modules\Auth\Services\AuthSession;
 use Roostar\Modules\Platform\Repositories\PlatformAdminRepository;
+use Roostar\Modules\Rosters\Repositories\RosterGenerationQueueRepository;
+use Roostar\Modules\Rosters\Services\RosterGenerationQueueWorker;
 
 final class PlatformAdminController
 {
@@ -30,6 +32,7 @@ final class PlatformAdminController
         }
 
         $repository = new PlatformAdminRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
+        $queue = new RosterGenerationQueueRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
 
         return Response::html(AppView::render('platform/index', [
             'activePage' => 'roostar-admin',
@@ -37,7 +40,30 @@ final class PlatformAdminController
             'csrfToken' => Csrf::token(),
             'customers' => $repository->customers(),
             'groups' => $repository->groups(),
+            'queueMaxConcurrent' => $queue->maxConcurrent(),
+            'queueStats' => $queue->queueStats(),
+            'queueJobs' => $queue->dashboardJobs(),
         ]));
+    }
+
+    public function updateQueueSettings(Request $request): Response
+    {
+        return $this->storeAction($request, function (PlatformAdminRepository $repository, string $userId) use ($request): void {
+            $queue = new RosterGenerationQueueRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
+            $queue->updateMaxConcurrent((int) $request->input('max_concurrent', 1));
+            NotificationBag::success('Queue-capaciteit is bijgewerkt.');
+        });
+    }
+
+    public function processQueue(Request $request): Response
+    {
+        return $this->storeAction($request, function (PlatformAdminRepository $repository, string $userId) use ($request): void {
+            $worker = new RosterGenerationQueueWorker(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
+            $results = $worker->processAvailable(1);
+            NotificationBag::success($results === []
+                ? 'Geen roosterjobs om te verwerken.'
+                : count($results) . ' roosterjob(s) verwerkt.');
+        });
     }
 
     public function storeCustomer(Request $request): Response
