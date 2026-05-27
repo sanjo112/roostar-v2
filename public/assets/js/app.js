@@ -411,7 +411,7 @@ function closeModal(modal) {
 }
 
 function closeRestoredModals() {
-  document.querySelectorAll('.modal-backdrop:not(.password-overlay)').forEach((modal) => {
+  document.querySelectorAll('.modal-backdrop:not(.password-overlay):not([data-auto-open-modal])').forEach((modal) => {
     modal.hidden = true;
   });
   document.body.classList.toggle('has-modal-open', document.querySelector('.modal-backdrop:not([hidden])') !== null);
