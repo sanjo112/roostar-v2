@@ -20,6 +20,7 @@ use Roostar\Modules\Rosters\Engine\SchedulingEngineFactory;
 use Roostar\Modules\Rosters\Repositories\RosterGenerationQueueRepository;
 use Roostar\Modules\Rosters\Repositories\RosterGenerationRepository;
 use Roostar\Modules\Rosters\Repositories\RosterWeekRepository;
+use Roostar\Modules\Rosters\Services\RosterGenerationQueueStarter;
 
 final class RosterController
 {
@@ -146,6 +147,7 @@ final class RosterController
                     );
 
                     if (($job['status'] ?? '') === 'queued') {
+                        (new RosterGenerationQueueStarter(dirname(__DIR__, 3)))->start();
                         NotificationBag::success('Rooster genereren is gestart.');
                     } else {
                         NotificationBag::warning('Er loopt al een roostergeneratie voor deze periode.');
@@ -191,7 +193,7 @@ final class RosterController
     private function visibleGenerationJob(array $jobs): ?array
     {
         foreach ($jobs as $job) {
-            if (in_array((string) ($job['status'] ?? ''), ['queued', 'running', 'failed'], true)) {
+            if ((string) ($job['status'] ?? '') === 'running') {
                 return $job;
             }
         }

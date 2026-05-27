@@ -1,6 +1,6 @@
 <section class="generation-page">
   <?php $generationJob = $generationJob ?? null; ?>
-  <?php if (is_array($generationJob) && in_array((string) ($generationJob['status'] ?? ''), ['queued', 'running'], true)): ?>
+  <?php if (is_array($generationJob) && (string) ($generationJob['status'] ?? '') === 'running'): ?>
     <meta http-equiv="refresh" content="5">
   <?php endif; ?>
   <div class="generation-header">

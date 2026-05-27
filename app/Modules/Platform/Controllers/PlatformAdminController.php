@@ -16,6 +16,7 @@ use Roostar\Core\View\AppView;
 use Roostar\Modules\Auth\Services\AuthSession;
 use Roostar\Modules\Platform\Repositories\PlatformAdminRepository;
 use Roostar\Modules\Rosters\Repositories\RosterGenerationQueueRepository;
+use Roostar\Modules\Rosters\Services\RosterGenerationQueueStarter;
 use Roostar\Modules\Rosters\Services\RosterGenerationQueueWorker;
 
 final class PlatformAdminController
@@ -54,6 +55,11 @@ final class PlatformAdminController
         }
 
         $queue = new RosterGenerationQueueRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
+        $stats = $queue->queueStats();
+
+        if (($stats['queued'] ?? 0) > 0 && ($stats['running'] ?? 0) < $queue->maxConcurrent()) {
+            (new RosterGenerationQueueStarter(dirname(__DIR__, 4)))->start();
+        }
 
         return Response::html(AppView::render('platform/queue', [
             'activePage' => 'rooster-queue',

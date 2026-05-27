@@ -4,6 +4,7 @@ $queueJobs = $queueJobs ?? [];
 ?>
 
 <section class="generation-page">
+  <meta http-equiv="refresh" content="5">
   <div class="generation-header">
     <div>
       <div class="eyebrow">Roostar Admin</div>
