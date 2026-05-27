@@ -6,6 +6,7 @@ namespace Roostar\Modules\Rosters\Services;
 
 use Roostar\Modules\Rosters\Engine\Model\ClassGroup;
 use Roostar\Modules\Rosters\Engine\Model\LessonRequest;
+use Roostar\Modules\Rosters\Engine\Model\Schedule;
 use Roostar\Modules\Rosters\Engine\Model\Room;
 use Roostar\Modules\Rosters\Engine\Model\SchedulingInput;
 use Roostar\Modules\Rosters\Engine\Model\Subject;
@@ -50,7 +51,8 @@ final class EngineRosterGenerator
 
         foreach ($requestGroups as $requestId => $group) {
             if (!isset($assigned[$requestId])) {
-                $issues[] = 'Niet geplaatst: ' . (string) $group['subject']['code'] . ' voor ' . (string) $group['className'] . '. Geen passende plek gevonden.';
+                $request = $input->lessonRequest((string) $requestId);
+                $issues[] = $this->unassignedRequestIssue($request, $group, $input, $run->schedule);
             }
         }
 
@@ -74,9 +76,10 @@ final class EngineRosterGenerator
             'issues' => array_values(array_unique($issues)),
             'stats' => [
                 'lessonGroups' => count($constraints['lessonGroups'] ?? []),
-                'lessonRequests' => count($requestGroups),
+                'lessonRequests' => (int) $adapter['expectedRequests'],
                 'lessons' => count($lessons),
-                'unplaced' => count($requestGroups) - count($assigned),
+                'unplaced' => max(0, (int) $adapter['expectedRequests'] - count($lessons)),
+                'skippedRequests' => (int) $adapter['skippedRequests'],
                 'engineScore' => $run->score->value,
                 'hardViolations' => $run->score->validation->hardCount(),
                 'softViolations' => $run->score->validation->softCount(),
@@ -100,6 +103,8 @@ final class EngineRosterGenerator
         $issues = [];
         $teacherLoad = [];
         $teacherSubjectLoad = [];
+        $expectedRequests = 0;
+        $skippedRequests = 0;
 
         foreach ($constraints['classes'] ?? [] as $class) {
             $classGroups[] = new ClassGroup((string) $class['id'], (string) $class['naam']);
@@ -125,9 +130,11 @@ final class EngineRosterGenerator
             $qualifiedTeachers = $this->qualifiedTeachers($group, $constraints);
             $suitableRooms = $this->suitableRooms($group, $constraints);
             $hoursPerWeek = (int) ($group['hoursPerWeek'] ?? 0);
+            $expectedRequests += max(0, $hoursPerWeek);
 
             if ($qualifiedTeachers === [] || $suitableRooms === []) {
                 $issues[] = $this->unplaceableGroupIssue($group, $qualifiedTeachers, $suitableRooms);
+                $skippedRequests += max(0, $hoursPerWeek);
                 continue;
             }
 
@@ -135,6 +142,7 @@ final class EngineRosterGenerator
 
             if ($teacher === null) {
                 $issues[] = 'Niet geplaatst: ' . (string) $group['subject']['code'] . ' voor ' . (string) $group['className'] . '. Geen bevoegde leraar heeft genoeg ruimte om dit vak volledig aan deze klas te geven.';
+                $skippedRequests += max(0, $hoursPerWeek);
                 continue;
             }
 
@@ -181,6 +189,8 @@ final class EngineRosterGenerator
             'teachers' => $teachers,
             'rooms' => $rooms,
             'issues' => $issues,
+            'expectedRequests' => $expectedRequests,
+            'skippedRequests' => $skippedRequests,
         ];
     }
 
@@ -284,6 +294,102 @@ final class EngineRosterGenerator
         }
 
         return $prefix . 'Geen geschikt lokaal met voldoende capaciteit beschikbaar.';
+    }
+
+    private function unassignedRequestIssue(?LessonRequest $request, array $group, SchedulingInput $input, Schedule $schedule): string
+    {
+        $prefix = 'Niet geplaatst: ' . (string) $group['subject']['code'] . ' voor ' . (string) $group['className'] . '. ';
+
+        if (!$request) {
+            return $prefix . 'De lesaanvraag ontbreekt in de engine-output.';
+        }
+
+        $teacher = $input->teacher($request->teacherId);
+        $classGroup = $input->classGroup($request->classGroupId);
+        $allowedRooms = $this->allowedEngineRooms($request, $input);
+
+        if ($teacher === null) {
+            return $prefix . 'De gekozen docent bestaat niet meer in de roosterdata.';
+        }
+
+        if ($classGroup === null) {
+            return $prefix . 'De klas bestaat niet meer in de roosterdata.';
+        }
+
+        if ($allowedRooms === []) {
+            return $prefix . 'Er is geen geschikt lokaal beschikbaar voor dit vak en deze klasgrootte.';
+        }
+
+        $availabilityMatches = [];
+        foreach ($input->timeSlots as $slot) {
+            if ($request->allowedSlotIds !== [] && !in_array($slot->id, $request->allowedSlotIds, true)) {
+                continue;
+            }
+
+            if ($teacher->availableSlotIds !== [] && !in_array($slot->id, $teacher->availableSlotIds, true)) {
+                continue;
+            }
+
+            if ($classGroup->availableSlotIds !== [] && !in_array($slot->id, $classGroup->availableSlotIds, true)) {
+                continue;
+            }
+
+            foreach ($allowedRooms as $room) {
+                if ($room->availableSlotIds === [] || in_array($slot->id, $room->availableSlotIds, true)) {
+                    $availabilityMatches[] = [$slot, $room];
+                }
+            }
+        }
+
+        if ($availabilityMatches === []) {
+            return $prefix . 'Docent ' . $teacher->name . ', de klas en de geschikte lokalen hebben geen gezamenlijk beschikbaar moment.';
+        }
+
+        $teacherBusy = 0;
+        $classBusy = 0;
+        $roomBusy = 0;
+
+        foreach ($availabilityMatches as [$slot, $room]) {
+            foreach ($schedule->assignments() as $assignment) {
+                if ($assignment->slotId !== $slot->id) {
+                    continue;
+                }
+
+                $teacherBusy += $assignment->teacherId === $request->teacherId ? 1 : 0;
+                $classBusy += $assignment->classGroupId === $request->classGroupId ? 1 : 0;
+                $roomBusy += $assignment->roomId === $room->id ? 1 : 0;
+            }
+        }
+
+        $reasons = [];
+        if ($classBusy > 0) {
+            $reasons[] = 'de klas is op passende momenten al bezet';
+        }
+        if ($teacherBusy > 0) {
+            $reasons[] = 'docent ' . $teacher->name . ' is op passende momenten al bezet';
+        }
+        if ($roomBusy > 0) {
+            $reasons[] = 'de geschikte lokalen zijn op passende momenten al bezet';
+        }
+
+        if ($reasons === []) {
+            $reasons[] = !empty($group['allowBlockHours'])
+                ? 'de blokuur-regels of spreidingsregels laten geen geldige plek over'
+                : 'de spreidingsregels laten geen geldige plek over';
+        }
+
+        return $prefix . ucfirst(implode(', ', $reasons)) . '.';
+    }
+
+    /**
+     * @return Room[]
+     */
+    private function allowedEngineRooms(LessonRequest $request, SchedulingInput $input): array
+    {
+        return array_values(array_filter(
+            $input->rooms,
+            static fn (Room $room): bool => $request->allowedRoomIds === [] || in_array($room->id, $request->allowedRoomIds, true),
+        ));
     }
 
     private function slots(): array
