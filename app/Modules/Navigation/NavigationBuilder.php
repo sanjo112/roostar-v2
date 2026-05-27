@@ -28,6 +28,7 @@ final class NavigationBuilder
         $groups = [
             'Hoofdmenu' => [
                 new NavigationItem('roostar-admin', 'Roostar Admin', '/roostar-admin', 'platform', 'HQ'),
+                new NavigationItem('rooster-queue', 'Rooster queue', '/roostar-admin/queue', 'bolt'),
                 new NavigationItem('rooster', 'Rooster', '/rooster', 'roster', 'v12'),
                 new NavigationItem('rooster-genereren', 'Rooster genereren', '/roosters/genereren', 'bolt', 'AI'),
                 new NavigationItem('ziekte', 'Ziekte', '/ziekte', 'heart'),
@@ -72,7 +73,7 @@ final class NavigationBuilder
             $allowed = [
                 ...$allowed,
                 ...match ($permission) {
-                    PermissionRegistry::PLATFORM_MANAGE => ['roostar-admin'],
+                    PermissionRegistry::PLATFORM_MANAGE => ['roostar-admin', 'rooster-queue'],
                     PermissionRegistry::SCHOOL_MANAGE => ['stamdata', 'leerlingen', 'settings'],
                     PermissionRegistry::USERS_MANAGE => ['gebruikers'],
                     PermissionRegistry::AUDIT_VIEW => ['auditlog'],

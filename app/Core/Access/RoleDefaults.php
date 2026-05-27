@@ -9,7 +9,7 @@ final class RoleDefaults
     public static function pageAccess(string $role): array
     {
         return match ($role) {
-            'roostar_admin' => ['roostar-admin', 'profiel'],
+            'roostar_admin' => ['roostar-admin', 'rooster-queue', 'profiel'],
             'sg_admin' => ['rooster', 'stamdata', 'leerlingen', 'ziekte', 'toetsweken', 'stage', 'gebruikers', 'auditlog', 'settings', 'registratie', 'profiel'],
             'school_admin' => ['rooster', 'stamdata', 'leerlingen', 'ziekte', 'toetsweken', 'stage', 'gebruikers', 'auditlog', 'settings', 'registratie', 'profiel'],
             'afdelingsleider' => ['afdeling', 'leraren', 'settings', 'profiel'],

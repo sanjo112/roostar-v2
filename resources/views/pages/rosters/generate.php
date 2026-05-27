@@ -1,4 +1,8 @@
 <section class="generation-page">
+  <?php $generationJob = $generationJob ?? null; ?>
+  <?php if (is_array($generationJob) && in_array((string) ($generationJob['status'] ?? ''), ['queued', 'running'], true)): ?>
+    <meta http-equiv="refresh" content="5">
+  <?php endif; ?>
   <div class="generation-header">
     <div>
       <div class="eyebrow">Rooster genereren</div>
@@ -56,63 +60,43 @@
           </div>
 
           <div class="generation-actions">
-            <button class="btn btn-dark generation-button" type="submit">Zet in queue</button>
+            <button class="btn btn-dark generation-button" type="submit">Genereer rooster</button>
           </div>
         </form>
       </section>
 
-      <?php $queueJobs = $queueJobs ?? []; ?>
-      <?php if ($queueJobs !== []): ?>
-        <section class="card tasks-card">
+      <?php if (is_array($generationJob)): ?>
+        <?php
+          $status = (string) ($generationJob['status'] ?? 'queued');
+          $statusLabel = [
+            'queued' => 'In wachtrij',
+            'running' => 'Bezig met genereren',
+            'failed' => 'Mislukt',
+          ][$status] ?? $status;
+          $statusClass = [
+            'queued' => 'st-muted',
+            'running' => 'st-warn',
+            'failed' => 'st-block',
+          ][$status] ?? 'st-muted';
+          $progress = (int) ($generationJob['progress_percent'] ?? 0);
+        ?>
+        <section class="card tasks-card generation-progress-card">
           <div class="tasks-head">
             <div>
-              <div class="eyebrow">Queue</div>
-              <h2>Generatiestatus</h2>
+              <div class="eyebrow">Generatiestatus</div>
+              <h2><?= htmlspecialchars($statusLabel) ?></h2>
+              <div class="muted text-sm">
+                <?= $status === 'failed' ? htmlspecialchars((string) ($generationJob['error_message'] ?? 'Generatie is mislukt.')) : 'Deze pagina vernieuwt automatisch zolang de generatie loopt.' ?>
+              </div>
             </div>
+            <span class="status <?= htmlspecialchars($statusClass) ?>"><?= htmlspecialchars($statusLabel) ?></span>
           </div>
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Voortgang</th>
-                  <th>Gelukt</th>
-                  <th>Lessen</th>
-                  <th>Gestart</th>
-                  <th>Klaar</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php foreach ($queueJobs as $job): ?>
-                  <?php
-                    $status = (string) ($job['status'] ?? 'queued');
-                    $statusLabel = [
-                      'queued' => 'In wachtrij',
-                      'running' => 'Bezig',
-                      'completed' => 'Klaar',
-                      'failed' => 'Mislukt',
-                    ][$status] ?? $status;
-                    $statusClass = [
-                      'queued' => 'st-muted',
-                      'running' => 'st-warn',
-                      'completed' => 'st-done',
-                      'failed' => 'st-block',
-                    ][$status] ?? 'st-muted';
-                  ?>
-                  <tr>
-                    <td><span class="status <?= htmlspecialchars($statusClass) ?>"><?= htmlspecialchars($statusLabel) ?></span></td>
-                    <td><?= (int) ($job['progress_percent'] ?? 0) ?>%</td>
-                    <td><?= ($job['result_percent'] ?? null) === null ? '-' : (int) $job['result_percent'] . '%' ?></td>
-                    <td class="muted"><?= (int) ($job['lesson_count'] ?? 0) ?> / <?= (int) ($job['lesson_request_count'] ?? 0) ?></td>
-                    <td class="muted"><?= !empty($job['started_at']) ? htmlspecialchars(date('d-m H:i', strtotime((string) $job['started_at']))) : '-' ?></td>
-                    <td class="muted"><?= !empty($job['finished_at']) ? htmlspecialchars(date('d-m H:i', strtotime((string) $job['finished_at']))) : '-' ?></td>
-                  </tr>
-                  <?php if (!empty($job['error_message'])): ?>
-                    <tr><td colspan="6" class="muted"><?= htmlspecialchars((string) $job['error_message']) ?></td></tr>
-                  <?php endif; ?>
-                <?php endforeach; ?>
-              </tbody>
-            </table>
+          <div class="generation-progress-track" aria-label="Voortgang">
+            <span style="width: <?= max(0, min(100, $progress)) ?>%"></span>
+          </div>
+          <div class="generation-progress-meta">
+            <strong><?= $progress ?>%</strong>
+            <span><?= ($generationJob['result_percent'] ?? null) === null ? 'Resultaat verschijnt zodra de job klaar is.' : 'Gelukt: ' . (int) $generationJob['result_percent'] . '%' ?></span>
           </div>
         </section>
       <?php endif; ?>

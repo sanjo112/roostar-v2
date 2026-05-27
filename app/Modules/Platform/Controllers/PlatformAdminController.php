@@ -32,7 +32,6 @@ final class PlatformAdminController
         }
 
         $repository = new PlatformAdminRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
-        $queue = new RosterGenerationQueueRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
 
         return Response::html(AppView::render('platform/index', [
             'activePage' => 'roostar-admin',
@@ -40,6 +39,26 @@ final class PlatformAdminController
             'csrfToken' => Csrf::token(),
             'customers' => $repository->customers(),
             'groups' => $repository->groups(),
+        ]));
+    }
+
+    public function queue(): Response
+    {
+        $user = AuthSession::userContext();
+        if (!$user) {
+            return Response::redirect('/login');
+        }
+
+        if (!$user->hasPermission(PermissionRegistry::PLATFORM_MANAGE)) {
+            return $this->forbidden();
+        }
+
+        $queue = new RosterGenerationQueueRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
+
+        return Response::html(AppView::render('platform/queue', [
+            'activePage' => 'rooster-queue',
+            'pageTitle' => 'Rooster queue',
+            'csrfToken' => Csrf::token(),
             'queueMaxConcurrent' => $queue->maxConcurrent(),
             'queueStats' => $queue->queueStats(),
             'queueJobs' => $queue->dashboardJobs(),
@@ -52,7 +71,7 @@ final class PlatformAdminController
             $queue = new RosterGenerationQueueRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
             $queue->updateMaxConcurrent((int) $request->input('max_concurrent', 1));
             NotificationBag::success('Queue-capaciteit is bijgewerkt.');
-        });
+        }, '/roostar-admin/queue');
     }
 
     public function processQueue(Request $request): Response
@@ -63,7 +82,7 @@ final class PlatformAdminController
             NotificationBag::success($results === []
                 ? 'Geen roosterjobs om te verwerken.'
                 : count($results) . ' roosterjob(s) verwerkt.');
-        });
+        }, '/roostar-admin/queue');
     }
 
     public function storeCustomer(Request $request): Response
@@ -130,7 +149,7 @@ final class PlatformAdminController
         });
     }
 
-    private function storeAction(Request $request, callable $callback): Response
+    private function storeAction(Request $request, callable $callback, string $redirectTo = '/roostar-admin'): Response
     {
         $user = AuthSession::userContext();
         if (!$user) {
@@ -143,7 +162,7 @@ final class PlatformAdminController
 
         if (!Csrf::verify($request->string('_token'))) {
             NotificationBag::error('Je sessie is verlopen. Probeer opnieuw.');
-            return Response::redirect('/roostar-admin');
+            return Response::redirect($redirectTo);
         }
 
         $repository = new PlatformAdminRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
@@ -156,7 +175,7 @@ final class PlatformAdminController
             NotificationBag::error('Roostar Admin actie is niet gelukt: ' . $error->getMessage());
         }
 
-        return Response::redirect('/roostar-admin');
+        return Response::redirect($redirectTo);
     }
 
     private function audit(string $action, string $userId, string $entityId, Request $request): void

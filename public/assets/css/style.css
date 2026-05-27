@@ -4870,6 +4870,35 @@ table.data-table tbody tr.row-selected {
   font-size: 12px;
   font-weight: 650;
 }
+.generation-progress-card {
+  gap: 14px;
+}
+.generation-progress-track {
+  display: block;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #E7EEF8;
+}
+.generation-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+  transition: width .2s ease;
+}
+.generation-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.generation-progress-meta strong {
+  color: var(--ink);
+  font-size: 13px;
+}
 .readiness-item {
   display: flex;
   align-items: flex-start;

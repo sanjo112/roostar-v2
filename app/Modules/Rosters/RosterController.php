@@ -146,9 +146,9 @@ final class RosterController
                     );
 
                     if (($job['status'] ?? '') === 'queued') {
-                        NotificationBag::success('Roostergeneratie is aan de queue toegevoegd.');
+                        NotificationBag::success('Rooster genereren is gestart.');
                     } else {
-                        NotificationBag::warning('Er staat al een roostergeneratie klaar of actief voor deze periode.');
+                        NotificationBag::warning('Er loopt al een roostergeneratie voor deze periode.');
                     }
 
                     return Response::redirect('/roosters/genereren?schooljaar_id=' . rawurlencode($selectedSchoolYearId) . '&periode_id=' . rawurlencode($selectedPeriodId));
@@ -179,13 +179,24 @@ final class RosterController
             'selectedSchoolYearId' => $selectedSchoolYearId,
             'selectedPeriodId' => $selectedPeriodId,
             'generated' => $generated,
-            'queueJobs' => $selectedPeriodId !== '' && !empty($classesForSchoolYear[0]['school_id'] ?? null)
-                ? $queueRepository->recentForPeriod((string) $classesForSchoolYear[0]['school_id'], $selectedPeriodId)
-                : [],
+            'generationJob' => $selectedPeriodId !== '' && !empty($classesForSchoolYear[0]['school_id'] ?? null)
+                ? $this->visibleGenerationJob($queueRepository->recentForPeriod((string) $classesForSchoolYear[0]['school_id'], $selectedPeriodId))
+                : null,
             'readiness' => $this->readiness($classesForSchoolYear, $subjects, $rooms, $teachers, $periodsForSchoolYear),
             'engineInput' => $engineInput,
             'engineResult' => SchedulingEngineFactory::default()->run($engineInput),
         ]));
+    }
+
+    private function visibleGenerationJob(array $jobs): ?array
+    {
+        foreach ($jobs as $job) {
+            if (in_array((string) ($job['status'] ?? ''), ['queued', 'running', 'failed'], true)) {
+                return $job;
+            }
+        }
+
+        return null;
     }
 
     public function moveLesson(Request $request): Response

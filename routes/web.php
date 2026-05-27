@@ -150,6 +150,7 @@ return static function (Router $router): void {
     $router->post('/toetsweken/surveillance', [$testPlanning, 'saveSurveillance'], $authRequired);
     $router->post('/toetsweken/surveillance/voorstel', [$testPlanning, 'proposeSurveillance'], $authRequired);
     $router->get('/roostar-admin', [$platformAdmin, 'index'], $authRequired);
+    $router->get('/roostar-admin/queue', [$platformAdmin, 'queue'], $authRequired);
     $router->post('/roostar-admin/klanten', [$platformAdmin, 'storeCustomer'], $authRequired);
     $router->post('/roostar-admin/klanten/archiveer', [$platformAdmin, 'archiveCustomer'], $authRequired);
     $router->post('/roostar-admin/klanten/heractiveer', [$platformAdmin, 'restoreCustomer'], $authRequired);

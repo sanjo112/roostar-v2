@@ -113,9 +113,9 @@ final class RosterGenerationQueueRepository
                 sy.naam AS schooljaar_naam,
                 p.naam AS periode_naam
             FROM roster_generation_jobs j
-            INNER JOIN scholen s ON s.id = j.school_id
-            INNER JOIN schooljaren sy ON sy.id = j.schooljaar_id
-            INNER JOIN schooljaar_periodes p ON p.id = j.periode_id
+            LEFT JOIN scholen s ON s.id = j.school_id
+            LEFT JOIN schooljaren sy ON sy.id = j.schooljaar_id
+            LEFT JOIN schooljaar_periodes p ON p.id = j.periode_id
             ORDER BY
                 FIELD(j.status, 'running', 'queued', 'failed', 'completed'),
                 j.created_at DESC
@@ -124,9 +124,11 @@ final class RosterGenerationQueueRepository
 
         return array_map(function (array $row): array {
             $job = $this->normalizeJob($row);
-            $job['school_naam'] = $this->decrypt((string) $row['school_naam_encrypted']);
-            $job['schooljaar_naam'] = (string) $row['schooljaar_naam'];
-            $job['periode_naam'] = (string) $row['periode_naam'];
+            $job['school_naam'] = !empty($row['school_naam_encrypted'])
+                ? $this->decrypt((string) $row['school_naam_encrypted'])
+                : 'Onbekende school';
+            $job['schooljaar_naam'] = (string) ($row['schooljaar_naam'] ?? 'Onbekend schooljaar');
+            $job['periode_naam'] = (string) ($row['periode_naam'] ?? 'Onbekende periode');
 
             return $job;
         }, $stmt->fetchAll());
