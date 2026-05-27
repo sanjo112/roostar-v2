@@ -57,6 +57,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.modal-backdrop[data-auto-open-modal]').forEach((modal) => {
+    modal.hidden = false;
+    document.body.classList.add('has-modal-open');
+    modal.querySelector('input, select, textarea, button')?.focus();
+  });
+});
+
+document.addEventListener('DOMContentLoaded', () => {
   const source = document.getElementById('roostar-notifications');
 
   if (!source?.textContent) {

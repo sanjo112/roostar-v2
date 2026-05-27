@@ -1221,6 +1221,25 @@ table.data-table td strong { font-weight: 500; color: var(--ink); }
   font: 12px/1.5 'Geist Mono', monospace;
   white-space: pre-wrap;
 }
+.generation-feedback-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: -6px 0 18px;
+}
+.roster-feedback-modal .modal-body {
+  max-height: min(70vh, 720px);
+  overflow: auto;
+}
+.feedback-issue-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  color: var(--ink-2);
+}
+.feedback-issue-list li {
+  line-height: 1.45;
+}
 
 /* ---------- Forms ---------- */
 .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }

@@ -1,6 +1,7 @@
 <?php
 $queueStats = $queueStats ?? ['queued' => 0, 'running' => 0, 'completed' => 0, 'failed' => 0];
 $queueJobs = $queueJobs ?? [];
+$feedbackJobs = [];
 ?>
 
 <section class="generation-page">
@@ -78,6 +79,7 @@ $queueJobs = $queueJobs ?? [];
             <th>Gelukt</th>
             <th>Hard/soft</th>
             <th>Aangemaakt</th>
+            <th>Acties</th>
           </tr>
         </thead>
         <tbody>
@@ -96,6 +98,17 @@ $queueJobs = $queueJobs ?? [];
                 'completed' => 'st-done',
                 'failed' => 'st-block',
               ][$status] ?? 'st-muted';
+              $hasFeedback = $status === 'failed'
+                || !empty($job['error_message'])
+                || ($status === 'completed' && (
+                  (int) ($job['result_percent'] ?? 100) < 100
+                  || (int) ($job['hard_violations'] ?? 0) > 0
+                  || (int) ($job['soft_violations'] ?? 0) > 0
+                ));
+              $feedbackModalId = 'queue-feedback-' . preg_replace('/[^a-zA-Z0-9_-]/', '-', (string) ($job['id'] ?? 'job'));
+              if ($hasFeedback) {
+                $feedbackJobs[] = ['id' => $feedbackModalId, 'job' => $job];
+              }
             ?>
             <tr>
               <td><strong><?= htmlspecialchars((string) ($job['school_naam'] ?? '')) ?></strong></td>
@@ -105,16 +118,32 @@ $queueJobs = $queueJobs ?? [];
               <td><?= ($job['result_percent'] ?? null) === null ? '-' : (int) $job['result_percent'] . '%' ?></td>
               <td class="muted"><?= (int) ($job['hard_violations'] ?? 0) ?> / <?= (int) ($job['soft_violations'] ?? 0) ?></td>
               <td class="muted"><?= htmlspecialchars(date('d-m H:i', strtotime((string) $job['created_at']))) ?></td>
+              <td>
+                <?php if ($hasFeedback): ?>
+                  <button class="btn btn-outline btn-sm" type="button" data-open-modal="<?= htmlspecialchars($feedbackModalId) ?>">Feedback</button>
+                <?php else: ?>
+                  <span class="muted">-</span>
+                <?php endif; ?>
+              </td>
             </tr>
             <?php if (!empty($job['error_message'])): ?>
-              <tr><td colspan="7" class="muted"><?= htmlspecialchars((string) $job['error_message']) ?></td></tr>
+              <tr><td colspan="8" class="muted"><?= htmlspecialchars((string) $job['error_message']) ?></td></tr>
             <?php endif; ?>
           <?php endforeach; ?>
           <?php if ($queueJobs === []): ?>
-            <tr><td colspan="7" class="muted">Nog geen roosterjobs.</td></tr>
+            <tr><td colspan="8" class="muted">Nog geen roosterjobs.</td></tr>
           <?php endif; ?>
         </tbody>
       </table>
     </div>
   </section>
+
+  <?php foreach ($feedbackJobs as $feedback): ?>
+    <?php
+      $job = $feedback['job'];
+      $modalId = $feedback['id'];
+      $autoOpen = false;
+      require dirname(__DIR__, 2) . '/partials/roster-generation-feedback.php';
+    ?>
+  <?php endforeach; ?>
 </section>

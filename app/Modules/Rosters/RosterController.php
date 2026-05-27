@@ -187,7 +187,10 @@ final class RosterController
             'selectedPeriodId' => $selectedPeriodId,
             'generated' => $generated,
             'generationJob' => $selectedPeriodId !== '' && !empty($classesForSchoolYear[0]['school_id'] ?? null)
-                ? $this->visibleGenerationJob($queueRepository->recentForPeriod((string) $classesForSchoolYear[0]['school_id'], $selectedPeriodId))
+                ? $this->runningGenerationJob($queueRepository->recentForPeriod((string) $classesForSchoolYear[0]['school_id'], $selectedPeriodId))
+                : null,
+            'feedbackJob' => $selectedPeriodId !== '' && !empty($classesForSchoolYear[0]['school_id'] ?? null)
+                ? $this->feedbackGenerationJob($queueRepository->recentForPeriod((string) $classesForSchoolYear[0]['school_id'], $selectedPeriodId))
                 : null,
             'readiness' => $this->readiness($classesForSchoolYear, $subjects, $rooms, $teachers, $periodsForSchoolYear),
             'engineInput' => $engineInput,
@@ -195,10 +198,31 @@ final class RosterController
         ]));
     }
 
-    private function visibleGenerationJob(array $jobs): ?array
+    private function runningGenerationJob(array $jobs): ?array
     {
         foreach ($jobs as $job) {
             if ((string) ($job['status'] ?? '') === 'running') {
+                return $job;
+            }
+        }
+
+        return null;
+    }
+
+    private function feedbackGenerationJob(array $jobs): ?array
+    {
+        foreach ($jobs as $job) {
+            $status = (string) ($job['status'] ?? '');
+
+            if ($status === 'failed') {
+                return $job;
+            }
+
+            if ($status === 'completed' && (
+                (int) ($job['result_percent'] ?? 100) < 100
+                || (int) ($job['hard_violations'] ?? 0) > 0
+                || (int) ($job['soft_violations'] ?? 0) > 0
+            )) {
                 return $job;
             }
         }

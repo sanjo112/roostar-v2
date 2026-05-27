@@ -1,5 +1,6 @@
 <section class="generation-page">
   <?php $generationJob = $generationJob ?? null; ?>
+  <?php $feedbackJob = $feedbackJob ?? null; ?>
   <?php if (is_array($generationJob) && (string) ($generationJob['status'] ?? '') === 'running'): ?>
     <meta http-equiv="refresh" content="5">
   <?php endif; ?>
@@ -101,6 +102,12 @@
         </section>
       <?php endif; ?>
 
+      <?php if (is_array($feedbackJob)): ?>
+        <div class="generation-feedback-actions">
+          <button class="btn btn-outline" type="button" data-open-modal="generation-feedback-modal">Bekijk feedback</button>
+        </div>
+      <?php endif; ?>
+
       <?php $overviewViews = $generated['views'] ?? []; ?>
       <?php if (empty($overviewViews['class'] ?? [])): ?>
         <section class="card schedule-card">
@@ -119,6 +126,15 @@
             </div>
           </div>
         </section>
+      <?php endif; ?>
+
+      <?php if (is_array($feedbackJob)): ?>
+        <?php
+          $job = $feedbackJob;
+          $modalId = 'generation-feedback-modal';
+          $autoOpen = true;
+          require dirname(__DIR__, 2) . '/partials/roster-generation-feedback.php';
+        ?>
       <?php endif; ?>
 
       <?php if (!empty($overviewViews['class'] ?? [])): ?>
