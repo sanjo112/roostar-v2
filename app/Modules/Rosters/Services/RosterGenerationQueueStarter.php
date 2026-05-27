@@ -24,11 +24,55 @@ final class RosterGenerationQueueStarter
             return false;
         }
 
-        $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($worker)
+        $this->ensureLogDirectory($log);
+
+        $command = escapeshellarg($this->phpBinary()) . ' ' . escapeshellarg($worker)
             . ' >> ' . escapeshellarg($log) . ' 2>&1 &';
 
-        exec($command);
+        exec($command, $output, $exitCode);
 
-        return true;
+        return $exitCode === 0;
+    }
+
+    public function startAndDeferFallback(callable $worker): bool
+    {
+        $started = $this->start();
+
+        register_shutdown_function(static function () use ($worker): void {
+            if (function_exists('fastcgi_finish_request')) {
+                @fastcgi_finish_request();
+            }
+
+            $worker();
+        });
+
+        return $started;
+    }
+
+    private function phpBinary(): string
+    {
+        $configured = trim((string) ($_ENV['PHP_CLI_BINARY'] ?? ''));
+
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        $binary = PHP_BINARY;
+        $name = strtolower(basename($binary));
+
+        if ($binary === '' || str_contains($name, 'php-fpm')) {
+            return 'php';
+        }
+
+        return $binary;
+    }
+
+    private function ensureLogDirectory(string $log): void
+    {
+        $directory = dirname($log);
+
+        if (!is_dir($directory)) {
+            @mkdir($directory, 0775, true);
+        }
     }
 }

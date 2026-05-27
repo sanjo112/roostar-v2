@@ -54,11 +54,17 @@ final class PlatformAdminController
             return $this->forbidden();
         }
 
-        $queue = new RosterGenerationQueueRepository(Connection::get(), new Encryptor($_ENV['ENCRYPTION_KEY'] ?? ''));
+        $db = Connection::get();
+        $encryptor = new Encryptor($_ENV['ENCRYPTION_KEY'] ?? '');
+        $queue = new RosterGenerationQueueRepository($db, $encryptor);
         $stats = $queue->queueStats();
 
         if (($stats['queued'] ?? 0) > 0 && ($stats['running'] ?? 0) < $queue->maxConcurrent()) {
-            (new RosterGenerationQueueStarter(dirname(__DIR__, 4)))->start();
+            (new RosterGenerationQueueStarter(dirname(__DIR__, 4)))->startAndDeferFallback(
+                static function () use ($db, $encryptor): void {
+                    (new RosterGenerationQueueWorker($db, $encryptor))->processAvailable(1);
+                },
+            );
         }
 
         return Response::html(AppView::render('platform/queue', [

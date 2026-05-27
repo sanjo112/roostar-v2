@@ -21,6 +21,7 @@ use Roostar\Modules\Rosters\Repositories\RosterGenerationQueueRepository;
 use Roostar\Modules\Rosters\Repositories\RosterGenerationRepository;
 use Roostar\Modules\Rosters\Repositories\RosterWeekRepository;
 use Roostar\Modules\Rosters\Services\RosterGenerationQueueStarter;
+use Roostar\Modules\Rosters\Services\RosterGenerationQueueWorker;
 
 final class RosterController
 {
@@ -147,7 +148,11 @@ final class RosterController
                     );
 
                     if (($job['status'] ?? '') === 'queued') {
-                        (new RosterGenerationQueueStarter(dirname(__DIR__, 3)))->start();
+                        (new RosterGenerationQueueStarter(dirname(__DIR__, 3)))->startAndDeferFallback(
+                            static function () use ($db, $encryptor): void {
+                                (new RosterGenerationQueueWorker($db, $encryptor))->processAvailable(1);
+                            },
+                        );
                         NotificationBag::success('Rooster genereren is gestart.');
                     } else {
                         NotificationBag::warning('Er loopt al een roostergeneratie voor deze periode.');
